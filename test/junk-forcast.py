@@ -34,7 +34,7 @@ def noise(time, noise_level=1, seed=None):
 
 
 time = np.arange(4 * 365 + 1, dtype="float32")
-series = trend(time, 0.1)
+# series = trend(time, 0.1)
 baseline = 10
 amplitude = 40
 slope = 0.05
@@ -47,4 +47,18 @@ series += noise(time, noise_level, seed=42)
 
 plt.figure(figsize=(10, 6))
 plot_series(time, series)
+# plt.show()
+
+# Now that we have the time series, let's split it so we can start forecasting
+split_time = 1000
+time_train = time[:split_time]
+x_train = series[:split_time]
+time_valid = time[split_time:]
+x_valid = series[split_time:]
+plt.figure(figsize=(10, 6))
+plot_series(time_train, x_train)
+plt.show()
+
+plt.figure(figsize=(10, 6))
+plot_series(time_valid, x_valid)
 plt.show()
