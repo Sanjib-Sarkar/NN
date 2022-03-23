@@ -56,11 +56,11 @@ train_lng, test_lng = train_test_split(series_lng, 0.7)
 tl = test_lat
 
 window_size = 15
-future = 1
+future = 4
 batch_size = 32
-train_x_lat = ts_data_preparation(train_lat, window_size=window_size, future=future, batch_size=batch_size,
+train_x_lat = ts_data_preparation(train_lat, window=window_size, future=future, batch=batch_size,
                                   shuffle=True)
-train_x_lng = ts_data_preparation(train_lng, window_size=window_size, future=future, batch_size=batch_size,
+train_x_lng = ts_data_preparation(train_lng, window=window_size, future=future, batch=batch_size,
                                   shuffle=True)
 
 test_lat = test_data_preparation(test_lat, window_size=window_size, batch_size=batch_size)
