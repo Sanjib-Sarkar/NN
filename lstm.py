@@ -54,21 +54,23 @@ train_lat, test_lat = train_test_split(series_lat, 0.7)
 train_lng, test_lng = train_test_split(series_lng, 0.7)
 
 tl = test_lat
+tln = test_lng
 
 window_size = 15
-future = 4
+future = 1
 batch_size = 32
-train_x_lat = ts_data_preparation(train_lat, window=window_size, future=future, batch=batch_size,
-                                  shuffle=True)
-train_x_lng = ts_data_preparation(train_lng, window=window_size, future=future, batch=batch_size,
-                                  shuffle=True)
+
+train_lat = ts_data_preparation(train_lat, window=window_size, future=future, batch=batch_size,
+                                shuffle=True)
+train_lng = ts_data_preparation(train_lng, window=window_size, future=future, batch=batch_size,
+                                shuffle=True)
 
 test_lat = test_data_preparation(test_lat, window_size=window_size, batch_size=batch_size)
-
-tf.keras.backend.clear_session()
+test_lng = test_data_preparation(test_lng, window_size=window_size, batch_size=batch_size)
 
 
 def model_lstm(w_size):
+    tf.keras.backend.clear_session()
     model = tf.keras.models.Sequential([
         tf.keras.layers.LSTM(50, activation='relu', return_sequences=True, input_shape=(w_size, 1)),
         tf.keras.layers.LSTM(50, activation='relu'),
@@ -81,12 +83,18 @@ def model_lstm(w_size):
 
 
 model = model_lstm(window_size)
-epochs = 50
-model.fit(train_x_lat, epochs=epochs, verbose=1)
 
+epochs = 50
+
+model.fit(train_lat, epochs=epochs, verbose=1)
 testPredict_lat = model.predict(test_lat)
 
-plt.plot(testPredict_lat, color='b', label='Predicted')
-plt.plot(tl, color='r', label='Original')
+model_ln = model_lstm(window_size)
+model_ln.fit(train_lng, epochs=epochs, verbose=1)
+testPredict_lng = model_ln.predict(test_lng)
+
+plt.plot(testPredict_lng, testPredict_lat, color='b', label='Predicted')
+plt.plot(tln, tl, color='r', label='Original')
+
 plt.legend()
 plt.show()
