@@ -1,15 +1,15 @@
 import numpy as np
-import tensorflow as tf
 import pandas as pd
-from matplotlib import pyplot as plt
+import tensorflow as tf
 from keras.preprocessing.sequence import TimeseriesGenerator
-from keras.models import Sequential
-from keras.layers import Dense, LSTM, SimpleRNN
+from matplotlib import pyplot as plt
 
 # from sklearn.preprocessing import MinMaxScaler
 # from sklearn.metrics import mean_squared_error
 
-fig, ax = plt.subplots(1, 1, figsize=(12, 5), tight_layout=True, dpi=100)
+plt.style.use('dark_background')
+
+fig, ax = plt.subplots(1, 1, figsize=(7, 5), tight_layout=True, dpi=100)
 file = 'Data/20220222_153859_hlc.csv'
 df = pd.read_csv(file, skiprows=1)
 df = df.rename(columns={"Latitude (Deg N)": 'lat', "Longitude (Deg W)": 'lng'}, errors="raise")
@@ -56,8 +56,8 @@ train_lng, test_lng = train_test_split(series_lng, 0.7)
 tl = test_lat
 tln = test_lng
 
-window_size = 15
-future = 1
+window_size = 10
+future = 2
 batch_size = 32
 
 train_lat = ts_data_preparation(train_lat, window=window_size, future=future, batch=batch_size,
@@ -70,11 +70,12 @@ test_lng = test_data_preparation(test_lng, window_size=window_size, batch_size=b
 
 
 def model_lstm(w_size):
+    units = 50
     tf.keras.backend.clear_session()
     model = tf.keras.models.Sequential([
-        tf.keras.layers.LSTM(50, activation='relu', return_sequences=True, input_shape=(w_size, 1)),
-        tf.keras.layers.LSTM(50, activation='relu'),
-        tf.keras.layers.Dense(1)])
+        tf.keras.layers.LSTM(units, activation='relu', return_sequences=True, input_shape=(w_size, 1)),
+        tf.keras.layers.LSTM(units, activation='relu'),
+        tf.keras.layers.Dense(1, activation='linear')])
     model.compile(optimizer=tf.keras.optimizers.SGD(learning_rate=1e-7, momentum=0.9),
                   loss='mse')
     model.summary()
@@ -93,8 +94,9 @@ model_ln = model_lstm(window_size)
 model_ln.fit(train_lng, epochs=epochs, verbose=1)
 testPredict_lng = model_ln.predict(test_lng)
 
-plt.plot(testPredict_lng, testPredict_lat, color='b', label='Predicted')
+plt.plot(testPredict_lng, testPredict_lat, color='y', label=f'P:future:{future}')
 plt.plot(tln, tl, color='r', label='Original')
 
+plt.title(f'WindowSize: {window_size}')
 plt.legend()
 plt.show()
