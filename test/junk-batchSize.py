@@ -47,5 +47,7 @@ for example in wd:
     print(example[0].numpy())
     print(example[1].numpy())
     i += 1
+    if i == 3:
+        break
 
 print(i)
