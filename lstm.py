@@ -25,7 +25,7 @@ index = int(len(df.lat) / 2)
 df['e_lat'], df['n_lng'], df['u'] = pm.geodetic2enu(df.lat, df.lng, df.h, df.lat[index],
                                                     df.lng[index], df.h, ell=None, deg=True)
 
-start = 10500
+start = 10600
 end = 13700
 lat = df.lat[start:end]
 lng = df.lng[start:end]
@@ -67,10 +67,10 @@ scaler.fit(coordinates)
 coordinates = scaler.transform(coordinates)
 # print(coordinates[:17])
 
-train, test = train_test_split(coordinates, 0.7)
+train, test = train_test_split(coordinates, 0.8)
 
-window_size = 15
-future = 10
+window_size = 20
+future = 5
 batch_size = 32
 
 target = train[(window_size + future) - 1:]
@@ -79,20 +79,22 @@ print(f'train: {len(train)}, target: {len(target)}')
 
 xy_train = ts_from_array(train, target, window=window_size, future=future, batch=batch_size, shuffle=True)
 
+
 # xy_test = ts_from_array(test, None, window=window_size, future=future, batch=batch_size, shuffle=False)
 
 
 def model_lstm(w_size):
-    units = 16
+    units = 32
     tf.keras.backend.clear_session()
     model = tf.keras.models.Sequential([
-        tf.keras.layers.LSTM(32, activation='relu', return_sequences=True, input_shape=(w_size, 2)),
-        tf.keras.layers.LSTM(units, activation='relu', return_sequences=True),
+        tf.keras.layers.LSTM((w_size+2)*2, activation='relu', return_sequences=True, input_shape=(w_size, 2)),
+        # tf.keras.layers.LSTM(units, activation='relu', return_sequences=True),
         tf.keras.layers.LSTM(units, activation='relu', return_sequences=True),
         tf.keras.layers.LSTM(units),
         tf.keras.layers.Dense(2, activation='linear')])
     model.summary()
     return model
+
 
 model = model_lstm(window_size)
 
@@ -108,25 +110,24 @@ model = model_lstm(window_size)
 # plt.show()
 
 model.compile(optimizer=tf.keras.optimizers.SGD(learning_rate=5e-2, momentum=0.9), loss='mse', metrics=['accuracy'])
-epochs = 150
+epochs = 100
 target_validation = test[(window_size + future) - 1:]
-xy_validation = ts_from_array(test, target_validation , window=window_size, future=future, batch=batch_size, shuffle=False)
-history = model.fit(xy_train, epochs=epochs, validation_data= xy_validation, verbose=1)
-
+xy_validation = ts_from_array(test, target_validation, window=window_size, future=future, batch=batch_size,
+                              shuffle=False)
+history = model.fit(xy_train, epochs=epochs, validation_data=xy_validation, verbose=1)
 
 print(history.history.keys())
 # # dict_keys(['loss', 'accuracy', 'val_loss', 'val_accuracy'])
-
-plt.plot(history.history['loss'], 'r', label='TrainLoss')
-plt.plot(history.history['accuracy'], 'orange', label='TrainAccuracy')
-plt.plot(history.history['val_loss'], 'w', label='ValidationLoss')
-plt.plot(history.history['val_accuracy'], 'g', label='ValidationAccuracy')
-plt.xlabel('Epochs')
+fig1, ax1 = plt.subplots()
+ax1.plot(history.history['loss'], 'r', label='TrainLoss')
+ax1.plot(history.history['accuracy'], 'orange', label='TrainAccuracy')
+ax1.plot(history.history['val_loss'], 'w', label='ValidationLoss')
+ax1.plot(history.history['val_accuracy'], 'g', label='ValidationAccuracy')
+ax1.set_xlabel('Epochs')
 # plt.grid(visible=True, axis='both')
-plt.title(f'Window:{window_size}, future: {future}')
-plt.legend()
-plt.show()
-
+ax1.set_title(f'Window:{window_size}, future: {future}')
+ax1.legend()
+# plt.show()
 
 test = ts_from_array(coordinates, None, window=window_size, future=future, batch=batch_size, shuffle=False)
 
@@ -139,12 +140,13 @@ df_n['h'] = 0
 df_n['Predted_lat'], df_n['Predicted_lng'], _ = pm.enu2geodetic(df_n.p_lat, df_n.p_lng, df_n.h,
                                                                 df.lat[index], df.lng[index],
                                                                 df.h[index], ell=None, deg=True)
-
-plt.plot(df_n.Predicted_lng, df_n.Predted_lat, color='r', label=f'predicted, future:{future}')
-plt.plot(lng, lat, label='Original')
-plt.title(f'Window{window_size}, future:{future}')
-plt.legend()
+fig, ax = plt.subplots()
+ax.plot(df_n.Predicted_lng, df_n.Predted_lat, color='r', label=f'predicted, future:{future}')
+ax.plot(lng, lat, label='Original')
+ax.set_title(f'Window{window_size}, future:{future}')
+ax.legend()
 plt.show()
+
 
 ###  >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>.
 # fig, ax = plt.subplots(1, 1, figsize=(7, 5), tight_layout=True, dpi=100)
