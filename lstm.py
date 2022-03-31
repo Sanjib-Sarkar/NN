@@ -70,7 +70,7 @@ coordinates = scaler.transform(coordinates)
 train, test = train_test_split(coordinates, 0.8)
 
 window_size = 20
-future = 5
+future = 2
 batch_size = 32
 
 target = train[(window_size + future) - 1:]
@@ -120,9 +120,9 @@ print(history.history.keys())
 # # dict_keys(['loss', 'accuracy', 'val_loss', 'val_accuracy'])
 fig1, ax1 = plt.subplots()
 ax1.plot(history.history['loss'], 'r', label='TrainLoss')
-ax1.plot(history.history['accuracy'], 'orange', label='TrainAccuracy')
+# ax1.plot(history.history['accuracy'], 'orange', label='TrainAccuracy')
 ax1.plot(history.history['val_loss'], 'w', label='ValidationLoss')
-ax1.plot(history.history['val_accuracy'], 'g', label='ValidationAccuracy')
+# ax1.plot(history.history['val_accuracy'], 'g', label='ValidationAccuracy')
 ax1.set_xlabel('Epochs')
 # plt.grid(visible=True, axis='both')
 ax1.set_title(f'Window:{window_size}, future: {future}')
