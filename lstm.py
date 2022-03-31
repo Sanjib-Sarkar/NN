@@ -70,8 +70,8 @@ coordinates = scaler.transform(coordinates)
 train, test = train_test_split(coordinates, 0.7)
 
 window_size = 15
-future = 2
-batch_size = 128
+future = 10
+batch_size = 32
 
 target = train[(window_size + future) - 1:]
 
@@ -79,13 +79,8 @@ print(f'train: {len(train)}, target: {len(target)}')
 
 xy_train = ts_from_array(train, target, window=window_size, future=future, batch=batch_size, shuffle=True)
 
-
-# xy_train = tf.convert_to_tensor(xy_train,dtype=tf.float64)
-
-
 # xy_test = ts_from_array(test, None, window=window_size, future=future, batch=batch_size, shuffle=False)
 
-# print('xy_train:', list(xy_train.as_numpy_iterator())[:2])
 
 def model_lstm(w_size):
     units = 16
@@ -97,16 +92,14 @@ def model_lstm(w_size):
         tf.keras.layers.LSTM(units),
         tf.keras.layers.Dense(2, activation='linear')])
     model.summary()
-    # print('Train...', model.summary())
     return model
 
+model = model_lstm(window_size)
 
 # lr = 2e-4
 # lr_schedular = tf.keras.callbacks.LearningRateScheduler(lambda epoch: lr * 10 ** (epoch / 30))
-# model = model_lstm(window_size)
 # model.compile(optimizer=tf.keras.optimizers.SGD(learning_rate=lr, momentum=0.9), loss='mse', metrics=['mae'])
 # epochs = 100
-
 # history = model.fit(xy_train, epochs=epochs, verbose=1, callbacks=[lr_schedular])
 # plt.semilogx(history.history["lr"], history.history["loss"], label='loss')
 # plt.axis([1e-3, 1, 0, 0.4])
@@ -114,33 +107,44 @@ def model_lstm(w_size):
 # plt.legend()
 # plt.show()
 
+model.compile(optimizer=tf.keras.optimizers.SGD(learning_rate=5e-2, momentum=0.9), loss='mse', metrics=['accuracy'])
+epochs = 150
+target_validation = test[(window_size + future) - 1:]
+xy_validation = ts_from_array(test, target_validation , window=window_size, future=future, batch=batch_size, shuffle=False)
+history = model.fit(xy_train, epochs=epochs, validation_data= xy_validation, verbose=1)
 
 
+print(history.history.keys())
+# # dict_keys(['loss', 'accuracy', 'val_loss', 'val_accuracy'])
 
-# print(history.history.keys())
-# # dict_keys(['loss', 'accuracy'])
+plt.plot(history.history['loss'], 'r', label='TrainLoss')
+plt.plot(history.history['accuracy'], 'orange', label='TrainAccuracy')
+plt.plot(history.history['val_loss'], 'w', label='ValidationLoss')
+plt.plot(history.history['val_accuracy'], 'g', label='ValidationAccuracy')
+plt.xlabel('Epochs')
+# plt.grid(visible=True, axis='both')
+plt.title(f'Window:{window_size}, future: {future}')
+plt.legend()
+plt.show()
 
-# plt.plot(history.history['loss'], label='Loss')
-# plt.plot(history.history['accuracy'], label='Accuracy')
 
-# xy_test = ts_from_array(test, None, window=window_size, future=future, batch=batch_size, shuffle=False)
-#
-# xy_predict = model.predict(xy_test)
-#
-# predicted_coor = scaler.inverse_transform(xy_predict)
-#
-# df_n = pd.DataFrame(predicted_coor, columns=('p_lat', 'p_lng'))
-# df_n['h'] = 0
-# ' Back to lag lng'
-# df_n['Predted_lat'], df_n['Predicted_lng'], _ = pm.enu2geodetic(df_n.p_lat, df_n.p_lng, df_n.h,
-#                                                                 df.lat[index], df.lng[index],
-#                                                                 df.h[index], ell=None, deg=True)
-#
-# plt.plot(df_n.Predicted_lng, df_n.Predted_lat, color='r', label=f'predicted, future:{future}')
-# plt.plot(lng, lat, label='Original')
-# plt.title(f'Window{window_size}')
-# plt.legend()
-# plt.show()
+test = ts_from_array(coordinates, None, window=window_size, future=future, batch=batch_size, shuffle=False)
+
+predicted = model.predict(test)
+predicted_coor = scaler.inverse_transform(predicted)
+
+df_n = pd.DataFrame(predicted_coor, columns=('p_lat', 'p_lng'))
+df_n['h'] = 0
+' Back to lag lng'
+df_n['Predted_lat'], df_n['Predicted_lng'], _ = pm.enu2geodetic(df_n.p_lat, df_n.p_lng, df_n.h,
+                                                                df.lat[index], df.lng[index],
+                                                                df.h[index], ell=None, deg=True)
+
+plt.plot(df_n.Predicted_lng, df_n.Predted_lat, color='r', label=f'predicted, future:{future}')
+plt.plot(lng, lat, label='Original')
+plt.title(f'Window{window_size}, future:{future}')
+plt.legend()
+plt.show()
 
 ###  >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>.
 # fig, ax = plt.subplots(1, 1, figsize=(7, 5), tight_layout=True, dpi=100)
