@@ -36,3 +36,4 @@ for file, label in zip(files, labels):
     df = df.loc[(df['lat'] != 0)]
     plot_series(df['lng'], df['lat'], xlabel='Longitude', ylabel='Latitude', label=label)
     plt.show()
+    # print(df.columns)
