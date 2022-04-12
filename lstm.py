@@ -17,23 +17,15 @@ df = df.loc[(df['lat'] != 0)]
 df['h'] = 0
 df.reset_index(drop=True, inplace=True)
 # print(df.head(5))
+
 index = int(len(df.lat) / 2)
 
-n_past = 120
-t_start = 12300
-
-taj_lat = df.lat[t_start: t_start+n_past]
-taj_lng = df.lng[t_start: t_start+n_past]
-taj = np.array([[i, j] for i, j in zip(taj_lat, taj_lng)])
-p_data = taj
-
-print(f'shape: pdata{p_data.shape}, {taj.shape}')
 ' Convert to local coordinate system'
 df['e_lat'], df['n_lng'], df['u'] = pm.geodetic2enu(df.lat, df.lng, df.h, df.lat[index],
                                                     df.lng[index], df.h, ell=None, deg=True)
 
-start = 10450
-end = 13820
+start = 11700
+end = 13900
 
 lat = df.lat[start:end]
 lng = df.lng[start:end]
@@ -92,25 +84,9 @@ scaler, coordinates = scaling(coordinates)
 
 train, test = train_test_split(coordinates, 0.75)
 
-# window_size = 4
-# future = 2
-# batch_size = 1
-# features = train[:-(window_size + future)]
-#
-# t1 = train[(window_size + future):]
-# t2 = train[(window_size + future) + 1:]
-# t3 = train[(window_size + future) + 2:]
-# t4 = train[(window_size + future) + 3:]
-#
-# target = np.array([(i, j, k, l) for i, j, k, l in zip(t1, t2, t3, t4)])
-# target = np.squeeze(target, axis=0)
-
-n_past = 120
-n_future = 30
+n_past = 60
+n_future = 60
 n_features = 2
-# t = test[:5,:]
-# t = t.reshape((t.shape[0], n_features))
-# print(t.shape)
 
 X_train, y_train = sequence_data(train, n_past, n_future)
 X_train = X_train.reshape((X_train.shape[0], X_train.shape[1], n_features))
@@ -123,9 +99,6 @@ y_test = y_test.reshape((y_test.shape[0], y_test.shape[1], n_features))
 print(f'Total:{coordinates.shape}, Train: {train.shape}, Test: {test.shape},'
       f'Features: {X_train.shape}, Targets: {y_train.shape},test-x: {X_test.shape}, test-y: {y_test.shape}')
 
-
-# print(train[:10, :])
-# print(X_train[:2])
 
 def model1(n_past, n_features):
     encoder_inputs = tf.keras.layers.Input(shape=(n_past, n_features))
@@ -154,43 +127,79 @@ def model_lstm(n_past, n_features):
     return model
 
 
-reduce_lr = tf.keras.callbacks.LearningRateScheduler(lambda x: 1e-3 * 0.90 ** x)
+callback_reduce_lr = tf.keras.callbacks.LearningRateScheduler(lambda x: 1e-3 * 0.90 ** x)
 callback_es = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=2)
 
-model_e1d1 = model1(n_past, n_features)
+model = model1(n_past, n_features)
 # model_e1d1 = model_lstm(n_past, n_features)
 
-model_e1d1.compile(optimizer=tf.keras.optimizers.Adam(), loss='mse', metrics=['mae'])
-history_e1d1 = model_e1d1.fit(X_train, y_train, epochs=50, validation_data=(X_test, y_test), batch_size=32, verbose=1,
-                              callbacks=[reduce_lr, callback_es])
+lr = 0.0001
+optimiser = tf.keras.optimizers.Adam(learning_rate=lr)
+# # # *************************LearningRate*******************************************************
+# lr_schedular = tf.keras.callbacks.LearningRateScheduler(lambda epoch: lr * 10 ** (epoch / 20))
+# es_callback = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=2)
+# model.compile(optimizer=optimiser, loss='mse', metrics=['mae'])
+# epochs = 100
+# history = model.fit(X_train, y_train, epochs=epochs, verbose=1, callbacks=[lr_schedular, es_callback])
+# plt.semilogx(history.history["lr"], history.history["loss"], label='loss')
+# # plt.axis([1e-3, 1, 0, 0.4])
+# plt.xlabel('Learning rate')
+# plt.legend()
+# plt.show()
+# # # *************************LearningRate*******************************************************
+
+model.compile(optimizer=optimiser, loss='mse', metrics=['mae'])
+history_e1d1 = model.fit(X_train, y_train, epochs=100, validation_data=(X_test, y_test), batch_size=32, verbose=1,
+                         callbacks=[callback_es])
 fig1, ax1 = plt.subplots()
 ax1.plot(history_e1d1.history['loss'], 'r', label='TrainLoss')
 ax1.plot(history_e1d1.history['val_loss'], 'w', label='ValidationLoss')
 plt.show()
 
-# pred_e1d1 = model_e1d1.predict(X_test)
+# xtest, ytest = sequence_data(coordinates, n_past, n_future)
+# X_test = xtest.reshape((X_test.shape[0], X_test.shape[1], n_features))
+
+pred = model.predict(X_test)
 #
-# print(f'Predicted shape: {pred_e1d1.shape}, {pred_e1d1[:1]}')
-# pred_e1d1 = pred_e1d1.reshape((-1, n_features))
-# print(f'Predicted shape: {pred_e1d1.shape}, {pred_e1d1[:1]}')
+print(f'Predicted shape: {pred.shape}')
+pred = pred.reshape((-1, n_features))
+print(f'Predicted shape: {pred.shape}')
+pred = scaler.inverse_transform(pred)
 
-origin_lat = p_data[0:1, 0:1]
-origin_lng = p_data[0:1, -1:]
+pred_lat, pred_lng, _ = pm.enu2geodetic(pred[:, :1], pred[:, 1:], 0, df.lat[index], df.lng[index], 0, ell=None,
+                                        deg=True)
 
-print(f'p_data:{p_data.shape}, {origin_lat}, {origin_lng}')
-t_lat, t_lng, _ = pm.geodetic2enu(p_data[:, :1], p_data[:, 1:], 0, origin_lat, origin_lng, 0, ell=None, deg=True)
+# plt.plot(pred_lng, pred_lat)
+
+t_start = 13400
+
+taj_lat = df.lat[t_start: t_start + n_past]
+taj_lng = df.lng[t_start: t_start + n_past]
+t_data = np.array([[i, j] for i, j in zip(taj_lat, taj_lng)])
+
+print(f'shape: pdata{t_data.shape}')
+
+origin_lat, origin_lng = t_data[-1, 0:1], t_data[-1, -1:]
+
+# origin_lat, origin_lng = df.lat[index], df.lng[index]
+h = np.zeros((1, 1))
+print(f't_data:{t_data.shape}, {origin_lat}, {origin_lng}')
+t_lat, t_lng, _ = pm.geodetic2enu(t_data[:, :1], t_data[:, 1:], h, origin_lat, origin_lng, h, ell=None, deg=True)
+hh = np.array(_)
 l_co = np.hstack((t_lat, t_lng))
-scaler, coordinates = scaling(l_co)
-p_data = np.reshape(coordinates, (1, X_train.shape[1], X_train.shape[2]))
-predicted = model_e1d1.predict(p_data)
+scaler2, coordinates = scaling(l_co)
+t_data = np.reshape(coordinates, (1, X_train.shape[1], X_train.shape[2]))
+predicted = model.predict(t_data)
 predicted = predicted.reshape((-1, n_features))
-p_cor = scaler.inverse_transform(predicted)
-p_lat, p_lng, _ = pm.enu2geodetic(p_cor[:, :1], p_cor[:, 1:], 0, origin_lat, origin_lng, 0, ell=None, deg=True)
+p_cor = scaler2.inverse_transform(predicted)
+p_lat, p_lng, _ = pm.enu2geodetic(p_cor[:, :1], p_cor[:, 1:], hh, origin_lat, origin_lng, h, ell=None, deg=True)
 
 plt.plot(lng, lat)
 plt.plot(p_lng, p_lat)
 plt.scatter(taj_lng, taj_lat)
 plt.show()
+
+# #*************************************************************************************************************8
 # print(taj, p_lat, p_lng)
 
 # xy_train = ts_from_array(features, target, window=window_size, batch=batch_size, shuffle=True)
