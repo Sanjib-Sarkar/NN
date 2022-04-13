@@ -24,7 +24,7 @@ ori_lat, ori_lng = df.lat[index], df.lng[index]
 df['e_lat'], df['n_lng'], df['u'] = pm.geodetic2enu(df.lat, df.lng, df.h, ori_lat, ori_lng, df.h, ell=None, deg=True)
 
 start = 11700
-end = 13900
+end = 14100
 
 lat = df.lat[start:end]
 lng = df.lng[start:end]
@@ -81,10 +81,10 @@ def sequence_data(series, window_past: int, window_future: int) -> np:
 
 scaler, coordinates = scaling(coordinates)
 
-train, test = train_test_split(coordinates, 0.75)
+train, test = train_test_split(coordinates, 0.90)
 
-n_past = 30
-n_future = 20
+n_past = 60
+n_future = 30
 n_features = 2
 
 X_train, y_train = sequence_data(train, n_past, n_future)
@@ -100,10 +100,10 @@ print(f'Total:{coordinates.shape}, Train: {train.shape}, Test: {test.shape},'
 
 
 def model1(n_past, n_features):
-    units = 200
+    units = 100
     encoder_inputs = tf.keras.layers.Input(shape=(n_past, n_features))
 
-    encoder_l1 = tf.keras.layers.LSTM(units,  return_state=True)
+    encoder_l1 = tf.keras.layers.LSTM(units, return_state=True)
     encoder_outputs1 = encoder_l1(encoder_inputs)
     # check = np.array(encoder_outputs1)
     # print('len:', len(encoder_outputs1), encoder_outputs1[1:])
@@ -134,25 +134,26 @@ def model2(n_past, n_features):
     # E2D2
     # n_features ==> no of features at each timestep in the data.
     encoder_inputs = tf.keras.layers.Input(shape=(n_past, n_features))
-    units = 1000
+    units = 200
     encoder_l1 = tf.keras.layers.LSTM(units, return_sequences=True, return_state=True)
     encoder_outputs1 = encoder_l1(encoder_inputs)
     encoder_states1 = encoder_outputs1[1:]
 
-    encoder_l2 = tf.keras.layers.LSTM(units, return_state=True)
+    encoder_l2 = tf.keras.layers.LSTM(units, return_sequences=True, return_state=True)
     encoder_outputs2 = encoder_l2(encoder_outputs1[0])
     encoder_states2 = encoder_outputs2[1:]
 
-    # encoder_l3 = tf.keras.layers.LSTM(units, return_state=True)
-    # encoder_outputs3 = encoder_l3(encoder_outputs2[0])
-    # encoder_states3 = encoder_outputs3[1:]
-    #
-    decoder_inputs = tf.keras.layers.RepeatVector(n_future)(encoder_outputs2[0])
+    encoder_l3 = tf.keras.layers.LSTM(units, return_state=True)
+    encoder_outputs3 = encoder_l3(encoder_outputs2[0])
+    encoder_states3 = encoder_outputs3[1:]
+
+    decoder_inputs = tf.keras.layers.RepeatVector(n_future)(encoder_outputs3[0])
     #
     decoder_l1 = tf.keras.layers.LSTM(units, return_sequences=True)(decoder_inputs, initial_state=encoder_states1)
     decoder_l2 = tf.keras.layers.LSTM(units, return_sequences=True)(decoder_l1, initial_state=encoder_states2)
-    # decoder_l3 = tf.keras.layers.LSTM(units, return_sequences=True)(decoder_l2, initial_state=encoder_states3)
-    decoder_outputs2 = tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(n_features, activation='linear'))(decoder_l2)
+    decoder_l3 = tf.keras.layers.LSTM(units, return_sequences=True)(decoder_l2, initial_state=encoder_states3)
+    decoder_outputs2 = tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(n_features, activation='linear'))(
+        decoder_l3)
     #
     model_e2d2 = tf.keras.models.Model(encoder_inputs, decoder_outputs2)
     #
@@ -161,14 +162,16 @@ def model2(n_past, n_features):
     return model_e2d2
 
 
-# callback_reduce_lr = tf.keras.callbacks.LearningRateScheduler(lambda x: 1e-3 * 0.90 ** x)
-callback_es = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=2)
+# callback_reduce_lr = tf.keras.callbacks.LearningRateScheduler(lambda x: 1e-3 * 0.80 ** x)
+callback_es_train = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=2)
+callback_es_val = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=3)
 
-model = model2(n_past, n_features)
+model = model1(n_past, n_features)
 # model = model_lstm(n_past, n_features)
 
-lr = 0.0001
+lr = 0.00001
 optimiser = tf.keras.optimizers.Adam(learning_rate=lr)
+# optimiser = tf.keras.optimizers.Adam()
 # # # *************************LearningRate*******************************************************
 # lr_schedular = tf.keras.callbacks.LearningRateScheduler(lambda epoch: lr * 10 ** (epoch / 20))
 # es_callback = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=2)
@@ -184,41 +187,44 @@ optimiser = tf.keras.optimizers.Adam(learning_rate=lr)
 
 model.compile(optimizer=optimiser, loss='mse', metrics=['mae'])
 history_e1d1 = model.fit(X_train, y_train, epochs=100, validation_data=(X_test, y_test), batch_size=32, verbose=1,
-                         callbacks=[callback_es])
+                         callbacks=[callback_es_train, callback_es_val])
 fig1, ax1 = plt.subplots()
 ax1.plot(history_e1d1.history['loss'], 'r', label='TrainLoss')
-ax1.plot(history_e1d1.history['val_loss'], 'w', label='ValidationLoss')
+ax1.plot(history_e1d1.history['val_loss'], 'y', label='ValidationLoss')
+plt.legend()
 plt.show()
 
 # xtest, ytest = sequence_data(coordinates, n_past, n_future)
 # X_test = xtest.reshape((X_test.shape[0], X_test.shape[1], n_features))
 
-pred = model.predict(X_test)
+# pred = model.predict(X_test)
 #
-print(f'Predicted shape: {pred.shape}')
-pred = pred.reshape((-1, n_features))
-print(f'Predicted shape: {pred.shape}')
-pred = scaler.inverse_transform(pred)
+# print(f'Predicted shape: {pred.shape}')
+# pred = pred.reshape((-1, n_features))
+# print(f'Predicted shape: {pred.shape}')
+# pred = scaler.inverse_transform(pred)
 
-pred_lat, pred_lng, _ = pm.enu2geodetic(pred[:, :1], pred[:, 1:], 0, df.lat[index], df.lng[index], 0, ell=None,
-                                        deg=True)
+# pred_lat, pred_lng, _ = pm.enu2geodetic(pred[:, :1], pred[:, 1:], 0, df.lat[index], df.lng[index], 0, ell=None,
+#                                         deg=True)
 
 # plt.plot(pred_lng, pred_lat)
 
-t_start = 13350
+t_start = 13450
 
-taj_lat = df.lat[t_start: t_start + n_past]
-taj_lng = df.lng[t_start: t_start + n_past]
+taj_lat = df.lat[t_start - n_past: t_start]
+taj_lng = df.lng[t_start - n_past: t_start]
+# print(f'sizelat: {taj_lat.shape}')
 t_data = np.array([[i, j] for i, j in zip(taj_lat, taj_lng)])
 
 print(f'shape: pdata{t_data.shape}')
 
-# origin_lat, origin_lng = t_data[-1, 0:1], t_data[-1, -1:]
-
-origin_lat, origin_lng = ori_lat, ori_lng
+origin_lat, origin_lng = t_data[0, 0:1], t_data[0, -1:]
+print(origin_lat, origin_lng)
+# print(t_data[:,-2:])
+# origin_lat, origin_lng = ori_lat, ori_lng
 h = np.zeros((1, 1))
-print(f't_data:{t_data.shape}, {origin_lat}, {origin_lng}')
-t_lat, t_lng, _ = pm.geodetic2enu(t_data[:, :1], t_data[:, 1:], h, origin_lat, origin_lng, h, ell=None, deg=True)
+# print(f't_data:{t_data.shape}, {origin_lat}, {origin_lng}')
+t_lat, t_lng, _ = pm.geodetic2enu(t_data[:, :1], t_data[:, 1:], 0, origin_lat, origin_lng, 0, ell=None, deg=True)
 
 l_co = np.hstack((t_lat, t_lng))
 scaler2, coordinates = scaling(l_co)
@@ -226,11 +232,12 @@ t_data = np.reshape(coordinates, (1, X_train.shape[1], X_train.shape[2]))
 predicted = model.predict(t_data)
 predicted = predicted.reshape((-1, n_features))
 p_cor = scaler2.inverse_transform(predicted)
-p_lat, p_lng, _ = pm.enu2geodetic(p_cor[:, :1], p_cor[:, 1:], h, origin_lat, origin_lng, h, ell=None, deg=True)
+p_lat, p_lng, _ = pm.enu2geodetic(p_cor[:, :1], p_cor[:, 1:], 0, origin_lat, origin_lng, 0, ell=None, deg=True)
 
-plt.plot(lng, lat)
-plt.plot(p_lng, p_lat)
-plt.scatter(taj_lng, taj_lat)
+plt.plot(lng, lat, label='Original', color='r')
+plt.plot(p_lng[::-1], p_lat[::-1], label=f'predicted future: {n_future}', color='y')
+plt.scatter(taj_lng, taj_lat, marker='*', label=f'History given: {n_past}')
+plt.legend()
 plt.show()
 
 # #*************************************************************************************************************8
