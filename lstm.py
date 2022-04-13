@@ -100,9 +100,11 @@ print(f'Total:{coordinates.shape}, Train: {train.shape}, Test: {test.shape},'
 
 
 def model1(n_past, n_features):
-    units = 100
+    units = 256
     encoder_inputs = tf.keras.layers.Input(shape=(n_past, n_features))
 
+    # encoder_l1 = tf.keras.layers.LSTM(units, return_state=True)
+    # encoder_outputs1 = encoder_l1(encoder_inputs)
     encoder_l1 = tf.keras.layers.LSTM(units, return_state=True)
     encoder_outputs1 = encoder_l1(encoder_inputs)
     # check = np.array(encoder_outputs1)
@@ -110,6 +112,7 @@ def model1(n_past, n_features):
     encoder_states1 = encoder_outputs1[1:]
 
     decoder_inputs = tf.keras.layers.RepeatVector(n_future)(encoder_outputs1[0])
+
     decoder_l1 = tf.keras.layers.LSTM(units, return_sequences=True)(decoder_inputs, initial_state=encoder_states1)
     decoder_outputs1 = tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(n_features, activation='linear'))(
         decoder_l1)
@@ -122,7 +125,7 @@ def model_lstm(n_past, n_features):
     units = 32
     tf.keras.backend.clear_session()
     model = tf.keras.models.Sequential([
-        tf.keras.layers.LSTM(units, return_sequences=True, input_shape=(n_past, n_features)),
+        tf.keras.layers.LSTM(units, return_sequences=True, return_state=True, input_shape=(n_past, n_features)),
         tf.keras.layers.RepeatVector(n_past),
         tf.keras.layers.LSTM(units, return_sequences=True),
         tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(n_features, activation='linear'))])
@@ -209,11 +212,11 @@ plt.show()
 
 # plt.plot(pred_lng, pred_lat)
 
-t_start = 13450
+t_start = 13880
 
 taj_lat = df.lat[t_start - n_past: t_start]
 taj_lng = df.lng[t_start - n_past: t_start]
-# print(f'sizelat: {taj_lat.shape}')
+# print(f'size:lat: {taj_lat.shape}')
 t_data = np.array([[i, j] for i, j in zip(taj_lat, taj_lng)])
 
 print(f'shape: pdata{t_data.shape}')
@@ -235,7 +238,7 @@ p_cor = scaler2.inverse_transform(predicted)
 p_lat, p_lng, _ = pm.enu2geodetic(p_cor[:, :1], p_cor[:, 1:], 0, origin_lat, origin_lng, 0, ell=None, deg=True)
 
 plt.plot(lng, lat, label='Original', color='r')
-plt.plot(p_lng[::-1], p_lat[::-1], label=f'predicted future: {n_future}', color='y')
+plt.plot(p_lng, p_lat, label=f'predicted future: {n_future}', color='y')
 plt.scatter(taj_lng, taj_lat, marker='*', label=f'History given: {n_past}')
 plt.legend()
 plt.show()
