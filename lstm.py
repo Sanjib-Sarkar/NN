@@ -8,30 +8,33 @@ from matplotlib import pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
 
 plt.style.use('dark_background')
+font = {'family': 'Arial', 'weight': 'normal', 'size': 10}
+plt.rc('font', **font)
 colors = [k for k, v in pcolor.cnames.items()]
 
-file = 'Data/simulated-data.csv'
-# file = 'Data/20220222_153859_hlc.csv'
-# df = pd.read_csv(file, skiprows=1)
-# df = df.rename(columns={"Latitude (Deg N)": 'lat', "Longitude (Deg W)": 'lng'}, errors="raise")
-# # df = df.rename(columns={"Latitude (Deg N)": 'lat', "Longitude (Deg W)": 'lng', "Speed (kts)": 'speed'},
-# # errors="raise")
+# file = 'Data/simulated-data.csv'
+# df = pd.read_csv(file, skiprows=0)
+# start = 10
+# end = 6400
 
-df = pd.read_csv(file, skiprows=0)
+file = 'Data/20220222_153859_hlc.csv'
+df = pd.read_csv(file, skiprows=1)
+df = df.rename(columns={"Latitude (Deg N)": 'lat', "Longitude (Deg W)": 'lng'}, errors="raise")
+# df = df.rename(columns={"Latitude (Deg N)": 'lat', "Longitude (Deg W)": 'lng', "Speed (kts)": 'speed'},
+# errors="raise")
+start = 11700
+end = 13900
+
 df = df.loc[(df['lat'] != 0)]  # discord 0 values
 df['h'] = 0
 df.reset_index(drop=True, inplace=True)
 
-# start = 11700
-# end = 13900
-start = 10
-end = 6400
 df = df.iloc[start:end]
 
 df.reset_index(drop=True, inplace=True)
 
 # ori_lat, ori_lng = df.lat[0], df.lng[0]
-ori_lat, ori_lng = df.lat[len(df.lat)-1], df.lng[len(df.lng)-1]
+ori_lat, ori_lng = df.lat[len(df.lat) - 1], df.lng[len(df.lng) - 1]
 
 ' Convert to local coordinate system'
 df['e_lat'], df['n_lng'], df['u'] = pm.geodetic2enu(df.lat, df.lng, df.h, ori_lat, ori_lng, df.h, ell=None, deg=True)
@@ -71,16 +74,16 @@ def sequence_data(df: pd.DataFrame, window_size, forecast_size, batch_size):
     return data.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
 
 
-n_past = 90
-n_future = 60
+n_past = 60
+n_future = 30
 n_features = 2
 mn_scaler, scaled_data = scaling(sub_df)
-print(type(scaled_data))
+# print(type(scaled_data))
 shuffled_data = sequence_data(scaled_data, window_size=n_past, forecast_size=n_future, batch_size=32)
 
 total_size = len(list(shuffled_data.as_numpy_iterator()))
 
-percentage = 0.75
+percentage = 0.8
 train_size = int(total_size * percentage)
 test_size = 1 - train_size
 
@@ -111,11 +114,47 @@ def model1(n_past, n_features):
     return model_e1d1
 
 
-model = model1(n_past=n_past, n_features=n_features)
+def model2(n_past, n_features):
+    # E2D2: encoder_outputs, state_h, state_c
+    encoder_inputs = tf.keras.layers.Input(shape=(n_past, n_features))
+    units = 256
+    encoder_outputs1 = tf.keras.layers.LSTM(units, return_sequences=True, return_state=True)(encoder_inputs)
+    encoder_states1 = encoder_outputs1[1:]
+
+    encoder_outputs2 = tf.keras.layers.LSTM(units, return_sequences=True, return_state=True)(encoder_outputs1[0])
+    encoder_states2 = encoder_outputs2[1:]
+
+    encoder_outputs3 = tf.keras.layers.LSTM(units, return_sequences=True, return_state=True)(encoder_outputs2[0])
+    encoder_states3 = encoder_outputs3[1:]
+
+    encoder_outputs4 = tf.keras.layers.LSTM(units, return_sequences=True, return_state=True)(encoder_outputs3[0])
+    encoder_states4 = encoder_outputs4[1:]
+
+    encoder_outputs5 = tf.keras.layers.LSTM(units, return_state=True)(encoder_outputs4[0])
+    encoder_states5 = encoder_outputs5[1:]
+
+    decoder_inputs = tf.keras.layers.RepeatVector(n_future)(encoder_outputs5[0])
+    #
+    decoder_l1 = tf.keras.layers.LSTM(units, return_sequences=True)(decoder_inputs, initial_state=encoder_states1)
+    decoder_l2 = tf.keras.layers.LSTM(units, return_sequences=True)(decoder_l1, initial_state=encoder_states2)
+    decoder_l3 = tf.keras.layers.LSTM(units, return_sequences=True)(decoder_l2, initial_state=encoder_states3)
+    decoder_l4 = tf.keras.layers.LSTM(units, return_sequences=True)(decoder_l3, initial_state=encoder_states4)
+    decoder_l5 = tf.keras.layers.LSTM(units, return_sequences=True)(decoder_l4, initial_state=encoder_states5)
+    decoder_outputs = tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(n_features, activation='linear'))(
+        decoder_l5)
+    #
+    model_e2d2 = tf.keras.models.Model(encoder_inputs, decoder_outputs)
+    #
+    model_e2d2.summary()
+
+    return model_e2d2
+
+
+model = model2(n_past=n_past, n_features=n_features)
 
 callback_es_train = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=1)
-callback_es_val = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=2)
-lr = 0.0001
+callback_es_val = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=1)
+lr = 0.00001
 optimiser = tf.keras.optimizers.Adam(learning_rate=lr)
 # # # *************************LearningRate*******************************************************
 # lr_schedular = tf.keras.callbacks.LearningRateScheduler(lambda epoch: lr * 10 ** (epoch / 20))
@@ -136,15 +175,16 @@ history_model = model.fit(train, epochs=100, validation_data=test, verbose=1,
 fig1, ax1 = plt.subplots()
 ax1.plot(history_model.history['loss'], 'r', label='TrainLoss')
 ax1.plot(history_model.history['val_loss'], 'y', label='ValidationLoss')
-# plt.legend()
+ax1.legend()
 # plt.show()
 
-plt.plot(sub_df.n_lng, sub_df.e_lat, color='r')
+
 # plt.show()
 
-start = 1200
-x_test = sub_df[start: start+n_past]
-print(x_test)
+# start_p = 5500
+start_p = 1150
+x_test = sub_df[start_p: start_p + n_past]
+# print(x_test)
 x_scaler, x_scaled_test = scaling(x_test)
 x_scaled_test = np.array(x_scaled_test)
 x_scaled_test = x_scaled_test.reshape((1, -1, n_features))
@@ -158,9 +198,14 @@ df_pred = pd.DataFrame(pred, columns=(['lat', 'lng']))
 df_pred = x_scaler.inverse_transform(df_pred)
 df_pred = pd.DataFrame(df_pred, columns=(['lat', 'lng']))
 # print(type(df_pred), df_pred)
-plt.plot(df_pred.lng, df_pred.lat, 'r*')
-plt.plot(x_test.n_lng, x_test.e_lat, 'yo')
+fig2, ax2 = plt.subplots()
+
+ax2.plot(sub_df.n_lng, sub_df.e_lat, color='r')
+ax2.plot(df_pred.lng, df_pred.lat, 'r*', label=f'predicted:{n_future}')
+ax2.plot(x_test.n_lng, x_test.e_lat, 'yo', label=f'past data:{n_past}')
+ax2.legend()
 plt.show()
+
 # print(df_pred.head(5))
 
 # lat = df.e_lat
