@@ -44,8 +44,8 @@ sub_df = df[['e_lat', 'n_lng']].copy()
 
 def scaling(data: pandas.DataFrame):
     # mn_scaler = MinMaxScaler(feature_range=(-1, 1))
-    data = data.copy()
     mn_scaler = MinMaxScaler()
+    data = data.copy()
     mn_scaler.fit(data)
     data = mn_scaler.transform(data)
     data = pd.DataFrame(data, columns=(['lat', 'lng']))
@@ -69,7 +69,7 @@ def sequence_data(df: pd.DataFrame, window_size, forecast_size, batch_size):
 
     # Extracting past features + deterministic future + labels
     data = data.map(lambda k: ((k[:-forecast_size],
-                                k[-forecast_size:, :])))
+                                k[-forecast_size:, ::5])))
 
     return data.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
 
@@ -77,9 +77,10 @@ def sequence_data(df: pd.DataFrame, window_size, forecast_size, batch_size):
 n_past = 60
 n_future = 30
 n_features = 2
+batch_size = 32
 mn_scaler, scaled_data = scaling(sub_df)
 # print(type(scaled_data))
-shuffled_data = sequence_data(scaled_data, window_size=n_past, forecast_size=n_future, batch_size=32)
+shuffled_data = sequence_data(scaled_data, window_size=n_past, forecast_size=n_future, batch_size=batch_size)
 
 total_size = len(list(shuffled_data.as_numpy_iterator()))
 
@@ -92,14 +93,12 @@ test = shuffled_data.take(test_size)
 
 
 def model1(n_past, n_features):
-    units = 200
+    units = 100
     encoder_inputs = tf.keras.layers.Input(shape=(n_past, n_features))
 
     # encoder_l1 = tf.keras.layers.LSTM(units, return_state=True)
     # encoder_outputs1 = encoder_l1(encoder_inputs)
     encoder_outputs1 = tf.keras.layers.LSTM(units, return_state=True)(encoder_inputs)
-    # check = np.array(encoder_outputs1)
-    # print('len:', len(encoder_outputs1), encoder_outputs1[1:])
     encoder_states1 = encoder_outputs1[1:]
 
     decoder_inputs = tf.keras.layers.RepeatVector(n_future)(encoder_outputs1[0])
@@ -117,31 +116,33 @@ def model1(n_past, n_features):
 def model2(n_past, n_features):
     # E2D2: encoder_outputs, state_h, state_c
     encoder_inputs = tf.keras.layers.Input(shape=(n_past, n_features))
-    units = 256
+    units = 180
     encoder_outputs1 = tf.keras.layers.LSTM(units, return_sequences=True, return_state=True)(encoder_inputs)
     encoder_states1 = encoder_outputs1[1:]
-
     encoder_outputs2 = tf.keras.layers.LSTM(units, return_sequences=True, return_state=True)(encoder_outputs1[0])
-    encoder_states2 = encoder_outputs2[1:]
-
     encoder_outputs3 = tf.keras.layers.LSTM(units, return_sequences=True, return_state=True)(encoder_outputs2[0])
-    encoder_states3 = encoder_outputs3[1:]
-
     encoder_outputs4 = tf.keras.layers.LSTM(units, return_sequences=True, return_state=True)(encoder_outputs3[0])
-    encoder_states4 = encoder_outputs4[1:]
+    # encoder_outputs5 = tf.keras.layers.LSTM(units, return_sequences=True, return_state=True)(encoder_outputs4[0])
+    # encoder_outputs6 = tf.keras.layers.LSTM(units, return_sequences=True, return_state=True)(encoder_outputs5[0])
+    # encoder_outputs7 = tf.keras.layers.LSTM(units, return_sequences=True, return_state=True)(encoder_outputs6[0])
+    # encoder_outputs8 = tf.keras.layers.LSTM(units, return_sequences=True, return_state=True)(encoder_outputs7[0])
+    # encoder_outputs9 = tf.keras.layers.LSTM(units, return_sequences=True, return_state=True)(encoder_outputs8[0])
+    encoder_outputs10 = tf.keras.layers.LSTM(units, return_state=True)(encoder_outputs4[0])
 
-    encoder_outputs5 = tf.keras.layers.LSTM(units, return_state=True)(encoder_outputs4[0])
-    encoder_states5 = encoder_outputs5[1:]
-
-    decoder_inputs = tf.keras.layers.RepeatVector(n_future)(encoder_outputs5[0])
+    decoder_inputs = tf.keras.layers.RepeatVector(n_future)(encoder_outputs10[0])
     #
     decoder_l1 = tf.keras.layers.LSTM(units, return_sequences=True)(decoder_inputs, initial_state=encoder_states1)
-    decoder_l2 = tf.keras.layers.LSTM(units, return_sequences=True)(decoder_l1, initial_state=encoder_states2)
-    decoder_l3 = tf.keras.layers.LSTM(units, return_sequences=True)(decoder_l2, initial_state=encoder_states3)
-    decoder_l4 = tf.keras.layers.LSTM(units, return_sequences=True)(decoder_l3, initial_state=encoder_states4)
-    decoder_l5 = tf.keras.layers.LSTM(units, return_sequences=True)(decoder_l4, initial_state=encoder_states5)
-    decoder_outputs = tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(n_features, activation='linear'))(
-        decoder_l5)
+    decoder_l2 = tf.keras.layers.LSTM(units, return_sequences=True)(decoder_l1, initial_state=encoder_outputs2[1:])
+    decoder_l3 = tf.keras.layers.LSTM(units, return_sequences=True)(decoder_l2, initial_state=encoder_outputs3[1:])
+    decoder_l4 = tf.keras.layers.LSTM(units, return_sequences=True)(decoder_l3, initial_state=encoder_outputs4[1:])
+    # decoder_l5 = tf.keras.layers.LSTM(units, return_sequences=True)(decoder_l4, initial_state=encoder_outputs5[1:])
+    # decoder_l6 = tf.keras.layers.LSTM(units, return_sequences=True)(decoder_l5, initial_state=encoder_outputs6[1:])
+    # decoder_l7 = tf.keras.layers.LSTM(units, return_sequences=True)(decoder_l6, initial_state=encoder_outputs7[1:])
+    # decoder_l8 = tf.keras.layers.LSTM(units, return_sequences=True)(decoder_l7, initial_state=encoder_outputs8[1:])
+    # decoder_l9 = tf.keras.layers.LSTM(units, return_sequences=True)(decoder_l8, initial_state=encoder_outputs9[1:])
+    decoder_l10 = tf.keras.layers.LSTM(units, return_sequences=True)(decoder_l4, initial_state=encoder_outputs10[1:])
+    decoder_outputs = tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(n_features, activation="linear"))(
+        decoder_l10)
     #
     model_e2d2 = tf.keras.models.Model(encoder_inputs, decoder_outputs)
     #
@@ -150,13 +151,17 @@ def model2(n_past, n_features):
     return model_e2d2
 
 
+def model3_bi(n_past, n_features):
+    pass
+
+
 model = model2(n_past=n_past, n_features=n_features)
 
 callback_es_train = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=1)
 callback_es_val = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=1)
-lr = 0.00001
+lr = 0.0001
 optimiser = tf.keras.optimizers.Adam(learning_rate=lr)
-# # # *************************LearningRate*******************************************************
+# # # # *************************LearningRate*******************************************************
 # lr_schedular = tf.keras.callbacks.LearningRateScheduler(lambda epoch: lr * 10 ** (epoch / 20))
 # es_callback = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=1)
 # model.compile(optimizer=optimiser, loss='mse', metrics=['mae'])
@@ -167,7 +172,7 @@ optimiser = tf.keras.optimizers.Adam(learning_rate=lr)
 # plt.xlabel('Learning rate')
 # plt.legend()
 # plt.show()
-# # # *************************LearningRate*******************************************************
+# # # # *************************LearningRate*******************************************************
 
 model.compile(optimizer=optimiser, loss='mse', metrics=['mae'])
 history_model = model.fit(train, epochs=100, validation_data=test, verbose=1,
@@ -182,7 +187,7 @@ ax1.legend()
 # plt.show()
 
 # start_p = 5500
-start_p = 1150
+start_p = 1040
 x_test = sub_df[start_p: start_p + n_past]
 # print(x_test)
 x_scaler, x_scaled_test = scaling(x_test)
@@ -200,7 +205,7 @@ df_pred = pd.DataFrame(df_pred, columns=(['lat', 'lng']))
 # print(type(df_pred), df_pred)
 fig2, ax2 = plt.subplots()
 
-ax2.plot(sub_df.n_lng, sub_df.e_lat, color='r')
+ax2.plot(sub_df.n_lng, sub_df.e_lat, '.')
 ax2.plot(df_pred.lng, df_pred.lat, 'r*', label=f'predicted:{n_future}')
 ax2.plot(x_test.n_lng, x_test.e_lat, 'yo', label=f'past data:{n_past}')
 ax2.legend()
