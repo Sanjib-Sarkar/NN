@@ -21,8 +21,7 @@ def create_dataset(df: pd.DataFrame, features,
     data = data.shuffle(shuffle_buffer_size)
 
     # Extracting past features + deterministic future + labels
-    data = data.map(lambda k: ((k[:-forecast_size],
-                                k[-forecast_size:])))
+    data = data.map(lambda k: (k[:-forecast_size], k[-forecast_size::2]))
 
     return data.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
 
@@ -31,7 +30,7 @@ coordinates = {'lat': [i for i in range(100)], 'lng': [i for i in range(100)]}
 
 df = pd.DataFrame(coordinates)
 
-df_sub = create_dataset(df, 0, window_size=5, forecast_size=2, batch_size=1)
+df_sub = create_dataset(df, 0, window_size=5, forecast_size=5, batch_size=1)
 
 
 print(f'ttype: {type(df_sub)}, {list(df_sub.as_numpy_iterator())[0]}')
