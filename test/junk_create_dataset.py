@@ -21,7 +21,7 @@ def create_dataset(df: pd.DataFrame, features,
     data = data.shuffle(shuffle_buffer_size)
 
     # Extracting past features + deterministic future + labels
-    data = data.map(lambda k: (k[:-forecast_size], k[-forecast_size::2]))
+    data = data.map(lambda k: (k[:-forecast_size:2], k[-forecast_size::2]))
 
     return data.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
 

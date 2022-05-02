@@ -18,9 +18,9 @@ df['h'] = 0
 df.reset_index(drop=True, inplace=True)
 # print(df.head(5))
 index = int(len(df.lat) / 2)
-t_start = 12775
-taj_lat = df.lat[t_start: t_start+25]
-taj_lng = df.lng[t_start: t_start+25]
+t_start = 12700
+taj_lat = df.lat[t_start: t_start+125]
+taj_lng = df.lng[t_start: t_start+125]
 taj = np.array([[i, j] for i, j in zip(taj_lat, taj_lng)])
 print('Taj:', taj.shape)
 ' Convert to local coordinate system'
@@ -67,9 +67,9 @@ def scaling(data):
 
 scaler, coordinates = scaling(coordinates)
 
-train, test = train_test_split(coordinates, 0.9)
+train, test = train_test_split(coordinates, 0.8)
 
-window_size = 20
+window_size = 90
 future = 2
 batch_size = 32
 
@@ -82,11 +82,10 @@ xy_train = ts_from_array(features, target, window=window_size, batch=batch_size,
 
 
 def model_lstm(w_size):
-    units = 32
+    units = 8
     tf.keras.backend.clear_session()
     model = tf.keras.models.Sequential([
-        tf.keras.layers.LSTM(w_size * 2, return_sequences=True,
-                             input_shape=(w_size, train.shape[1])),
+        tf.keras.layers.LSTM(w_size * 2, return_sequences=True, input_shape=(w_size, train.shape[1])),
         tf.keras.layers.LSTM(units),
         tf.keras.layers.Dense(2, activation='linear')])
     model.summary()
@@ -110,13 +109,13 @@ optimiser = tf.keras.optimizers.Adam(learning_rate=lr)
 # plt.show()
 
 model.compile(optimizer=optimiser, loss='mse', metrics=['accuracy'])
-epochs = 100
+epochs = 30
 
 valid_target = test[(window_size + future):]
 valid_features = test[:-(window_size + future)]
 xy_validation = ts_from_array(valid_features, valid_target, window=window_size, batch=batch_size, shuffle=False)
 
-callback = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=3)
+callback = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=1)
 history = model.fit(xy_train, epochs=epochs, validation_data=xy_validation, verbose=1, callbacks=callback)
 
 # print(history.history.keys())
@@ -132,7 +131,7 @@ ax1.set_title(f'Window:{window_size}, future: {future}')
 ax1.legend()
 # plt.show()
 
-test = ts_from_array(test, None, window=window_size, batch=1, shuffle=False)
+test = ts_from_array(coordinates, None, window=window_size, batch=1, shuffle=False)
 
 predicted = model.predict(test)
 # print(f'Predicted:{predicted}: type{type(predicted)}')
@@ -166,12 +165,12 @@ origin_lng = df.lng[index]
 # print(f'back: {back_lat[:3]},{back_lng[:3], b_u[:3]}')
 # taj = taj[-20:]
 # print("taj:", taj, taj.shape)
-next = 15
+next = 30
 path = np.zeros(shape=(next, 2))
 for i in range(next):
     ' Convert to local coordinate system'
-    origin_lat = taj[0:1, 0:1]
-    origin_lng = taj[0:1, -1:]
+    origin_lat = taj[-1, 0:1]
+    origin_lng = taj[-1, -1:]
     # print(f'taj:{taj[:1]},lat:{origin_lat}, lng:{origin_lng}')
     t_lat, t_lng, _ = pm.geodetic2enu(taj[-window_size:, :1], taj[-window_size:, 1:], 0, origin_lat, origin_lng, 0, ell=None, deg=True)
     l_co = np.hstack((t_lat, t_lng))
@@ -190,6 +189,7 @@ for i in range(next):
 
 
 # print(f'path:{path}')
+
 plt.scatter(taj[:, -1:], taj[:, 0:1], marker='*', color='c')
 # plt.scatter(path[:, -1:], path[:, 0:1], s=80, facecolors='none', edgecolors='y')
 plt.plot(path[:, -1:], path[:, 0:1], color='y')

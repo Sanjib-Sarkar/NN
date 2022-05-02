@@ -35,7 +35,7 @@ def ts_from_array(features, targets, window, future, batch, shuffle):
     # data = features[:-(window + 1)] if future != 1 else features
     data = features
     # targets = target
-    print("Features and targets shape: ", data.shape, targets.shape if targets is not None else '')
+    # print("Features and targets shape: ", data.shape, targets.shape if targets is not None else '')
     tensor = tf.keras.preprocessing.timeseries_dataset_from_array(data, targets, sequence_length=window,
                                                                   sequence_stride=1,
                                                                   sampling_rate=1, batch_size=batch, shuffle=shuffle,
@@ -44,30 +44,54 @@ def ts_from_array(features, targets, window, future, batch, shuffle):
     return tensor
 
 
+# window_size = 5
+# future = 1
+# batch_size = 1
+#
+# start = 10500
+# end = 13700
+#
+# x = np.array([[i, j, k] for i, j, k in zip(df.lat, df.lng, df.speed)])
+# x = x[start:end]
+# y = np.array([[i, j] for i, j in zip(df.lat, df.lng)])
+# y = y[start:end]
+#
+#
+# # target = x[(window_size + future) - 1:]
+# x = x[:-(future+window_size)]
+# target = y[(window_size + future):]
+# print(f'train: {x.shape}, target: {target.shape}')
+#
+# train = ts_from_array(x, target, window=window_size,  future=future, batch=batch_size, shuffle=False)
+# # test = ts_from_array(x, None, window=window_size, batch=batch_size, shuffle=False, future=future)
+# # print("Coordinates: ", x[:10])
+# print("TimeSeries: ", list(train.as_numpy_iterator())[:2])
+# # ************************************************************************************************************
+
+def time_series_data_generate(features, labels, ):
+
+    pass
+
+m = [i for i in range(1000)]
+n = [j for j in range(1000)]
+x = [[i, j] for i, j in zip(m, n)]
+
 window_size = 5
-future = 2
+future = 1
 batch_size = 1
 
-start = 10500
-end = 13700
-
-x = np.array([[i, j, k] for i, j, k in zip(df.lat, df.lng, df.speed)])
-x = x[start:end]
-y = np.array([[i, j] for i, j in zip(df.lat, df.lng)])
-y = y[start:end]
-# m = [i for i in range(1000)]
-# n = [j for j in range(1000)]
-# x = [[i, j] for i, j in zip(m, n)]
-
-# target = x[(window_size + future) - 1:]
-x = x[:-(future+window_size)]
-target = y[(window_size + future):]
-print(f'train: {x.shape}, target: {target.shape}')
+t1 = x[(window_size + future) - 1:]
+t2 = x[(window_size + future+1) - 1:]
+# t3 = x[(window_size + future+2) - 1:]
+# t4 = x[(window_size + future+3) - 1:]
+target = [[i, j] for i, j in zip(t1, t2)]
 
 train = ts_from_array(x, target, window=window_size,  future=future, batch=batch_size, shuffle=False)
-# test = ts_from_array(x, None, window=window_size, batch=batch_size, shuffle=False, future=future)
-print("Coordinates: ", x[:10])
+print("Coordinates: ", x[:20])
 print("TimeSeries: ", list(train.as_numpy_iterator())[:2])
+
+
+# #********************************************************************************************************
 
 # print("TimeSeries: ", list(test.as_numpy_iterator())[:2])
 # wd = windowed_dataset(x, window_size=window_size, batch_size=batch_size,
