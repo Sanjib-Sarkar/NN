@@ -1,3 +1,5 @@
+import datetime
+
 import time
 import matplotlib.colors as pcolor
 import numpy as np
@@ -11,7 +13,7 @@ from os.path import exists
 import os
 import glob
 from matplotlib.animation import FuncAnimation
-
+print("Time Start:", datetime.datetime.now())
 tf.keras.backend.clear_session()
 
 plt.style.use('dark_background')
@@ -29,7 +31,7 @@ colors = [k for k, v in pcolor.cnames.items()]
 files = glob.glob("Data/logs/*.log")[:-1]
 df = pd.concat((pd.read_csv(file, delimiter=';', skiprows=0) for file in files))
 df = df.rename(columns={"Latitude": 'lat', "Longitude": 'lng'}, errors="raise")
-
+# print(files)
 # file = 'Data/logs/20220429-161912--lm_1p_fd2-IVER3-3072.log'
 # df = pd.read_csv(file, delimiter=';', skiprows=0)
 # df = df.rename(columns={"Latitude": 'lat', "Longitude": 'lng'}, errors="raise")
@@ -60,7 +62,7 @@ def scaling(data: pandas.DataFrame):  # BiB: changed data -> data1, probably unn
     mn_scaler.fit(data1)
     data1 = mn_scaler.transform(data1)
     data1 = pd.DataFrame(data1, columns=(['lat', 'lng', 'ind']))
-    return mn_scaler, data1
+    return mn_scaler, data1, mn_scaler.get_params,
 
 
 def sequence_data(df: pd.DataFrame, window_size, forecast_size, batch_size):
@@ -89,7 +91,7 @@ n_past = 60
 n_future = 60
 n_features = 2 + 1  # BiB: 3rd feature added
 batch_size = 32
-mn_scaler, scaled_data = scaling(sub_df)
+mn_scaler, scaled_data, parameters = scaling(sub_df)
 
 shuffled_data = sequence_data(scaled_data, window_size=n_past, forecast_size=n_future, batch_size=batch_size)
 
@@ -151,7 +153,8 @@ optimiser = tf.keras.optimizers.Adam(learning_rate=lr)
 # # # # *************************LearningRate*******************************************************
 
 # BiB: save/reload best weights
-WEIGHTS_PATH = './best_weights_all.hdf5'
+# WEIGHTS_PATH = './best_weights_all.hdf5'
+WEIGHTS_PATH = './best_weights.hdf5'
 NUM_REPEATS = 5  # BiB: multiple restarts may be needed to find good fit
 if exists(WEIGHTS_PATH):
     model = model1_bi(n_past=n_past, n_features=n_features)
@@ -211,6 +214,9 @@ df_pred.drop('ind', axis=1, inplace=True)  # BiB: dropped extra feature
 # plt.show()
 
 # # ********************************Animation *****************************************
+
+# file_not_trained = 'Data/logs/20220429-171330--lm_1p_fd4-IVER3-3072.log'
+# file_not_trained = 'Data/logs/20220429-151241--lm_1p-IVER3-3072.log'
 file_not_trained = 'Data/logs/20220429-161912--lm_1p_fd2-IVER3-3072.log'
 df_ani = pd.read_csv(file_not_trained, delimiter=';', skiprows=0)
 df_ani = df_ani.rename(columns={"Latitude": 'lat', "Longitude": 'lng'}, errors="raise")
@@ -229,7 +235,10 @@ end_p = sub_df_ani.index.stop
 indices = [*range(end_p - start_p)]  # BiB: added an index feature to data
 sub_df_ani['ind'] = indices
 
-scaler_ani, scaled_sub_df_ani = scaling(sub_df_ani)
+scaler_ani = MinMaxScaler(feature_range=(-1., 1.))
+scaled_sub_df_ani = scaler_ani.fit_transform(sub_df_ani, parameters)
+scaled_sub_df_ani = pd.DataFrame(scaled_sub_df_ani, columns=['lat', 'lng', 'ind'])
+# scaler_ani, scaled_sub_df_ani = scaling(sub_df_ani)
 
 # start_p = sub_df_ani.index.start + 1
 fig, ax = plt.subplots()
@@ -245,9 +254,6 @@ def init():
     return ax,
 
 
-# plt.plot(scaled_sub_df_ani.lng, scaled_sub_df_ani.lat, alpha=0.5)
-
-
 def animate(i):
     # time.sleep(0.1)
     i = i + start_p
@@ -260,13 +266,14 @@ def animate(i):
     pred = scaler_ani.inverse_transform(df_pred)
     df_pred.drop('ind', axis=1, inplace=True)
     print(i)
-    # plt.cla()
+    plt.cla()
+    ax.plot(scaled_sub_df_ani.lng, scaled_sub_df_ani.lat, alpha=0.5)
     ax.plot(scaled.lng, scaled.lat, 'y', label='past')
     ax.plot(df_pred.lng, df_pred.lat, 'r', label='predicted')
     return ax
 
 
 # ani = FuncAnimation(plt.gcf(), animate, interval=10)
-ani = FuncAnimation(fig, animate, init_func=init, interval=300)
+ani = FuncAnimation(plt.gcf(), animate, init_func=init, interval=10)
 plt.tight_layout()
 plt.show()
