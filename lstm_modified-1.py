@@ -1,18 +1,14 @@
+from os.path import exists
 import datetime
-
-import time
+import glob
 import matplotlib.colors as pcolor
 import numpy as np
-import pandas
 import pandas as pd
 import pymap3d as pm
 import tensorflow as tf
 from matplotlib import pyplot as plt
-from sklearn.preprocessing import MinMaxScaler
-from os.path import exists
-import os
-import glob
 from matplotlib.animation import FuncAnimation
+from sklearn.preprocessing import MinMaxScaler
 
 print("Time Start:", datetime.datetime.now())
 tf.keras.backend.clear_session()
