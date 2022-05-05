@@ -13,6 +13,7 @@ from os.path import exists
 import os
 import glob
 from matplotlib.animation import FuncAnimation
+
 print("Time Start:", datetime.datetime.now())
 tf.keras.backend.clear_session()
 
@@ -21,48 +22,49 @@ font = {'family': 'Arial', 'weight': 'normal', 'size': 10}
 plt.rc('font', **font)
 colors = [k for k, v in pcolor.cnames.items()]
 
-# file = 'Data/20220222_153859_hlc.csv'
-# df = pd.read_csv(file, skiprows=1)
-# df = df.rename(columns={"Latitude (Deg N)": 'lat', "Longitude (Deg W)": 'lng'}, errors="raise")
-# # df = df.rename(columns={"Latitude (Deg N)": 'lat', "Longitude (Deg W)": 'lng', "Speed (kts)": 'speed'},
-# # errors="raise")
-# start = 11700
-# end = 13900
-files = glob.glob("Data/logs/*.log")[:-1]
-df = pd.concat((pd.read_csv(file, delimiter=';', skiprows=0) for file in files))
-df = df.rename(columns={"Latitude": 'lat', "Longitude": 'lng'}, errors="raise")
-# print(files)
-# file = 'Data/logs/20220429-161912--lm_1p_fd2-IVER3-3072.log'
-# df = pd.read_csv(file, delimiter=';', skiprows=0)
-# df = df.rename(columns={"Latitude": 'lat', "Longitude": 'lng'}, errors="raise")
 
-df = df.loc[(df['lat'] != 0)]
-df.reset_index(drop=True, inplace=True)
+def preprocessing(data_frame, scaler):
+    data_frame.rename(columns={"Latitude": 'lat', "Longitude": 'lng'}, errors="raise", inplace=True)
+    data_frame = data_frame[['lat', 'lng', 'Time', 'Date']].copy()
+    data_frame = data_frame.loc[(data_frame['lat'] != 0)]
+    data_frame.reset_index(drop=True, inplace=True)
+    data_frame['time'] = pd.to_datetime(data_frame['Date'] + ' ' + data_frame['Time'])
+    data_frame['Time_diff'] = pd.to_timedelta(data_frame['Time'].astype(str)).diff(1).dt.total_seconds()
+    data_frame['dt'] = data_frame['Time_diff'].cumsum().fillna(0)
+    ori_lat, ori_lng = data_frame.lat[len(data_frame.lat) - 1], data_frame.lng[len(data_frame.lng) - 1]
+    data_frame['h'] = 0
+    ' Convert to local coordinate system'
+    data_frame['e_lat'], data_frame['n_lng'], data_frame['u'] = pm.geodetic2enu(data_frame.lat, data_frame.lng,
+                                                                                data_frame.h, ori_lat, ori_lng,
+                                                                                data_frame.h, ell=None, deg=True)
+    data_frame = data_frame[['e_lat', 'n_lng', 'dt']].copy()
 
-df['h'] = 0
-
-# ori_lat, ori_lng = df.lat[0], df.lng[0]
-ori_lat, ori_lng = df.lat[len(df.lat) - 1], df.lng[len(df.lng) - 1]
-
-' Convert to local coordinate system'
-df['e_lat'], df['n_lng'], df['u'] = pm.geodetic2enu(df.lat, df.lng, df.h, ori_lat, ori_lng, df.h, ell=None, deg=True)
-
-sub_df = df[['e_lat', 'n_lng']].copy()
-
-start = sub_df.index.start
-end = sub_df.index.stop
-
-indices = [*range(end - start)]  # BiB: added an index feature to data
-sub_df['ind'] = indices
+    'Scaling..... ????'
+    scaler.fit(data_frame)
+    data_frame = scaler.transform(data_frame)
+    data_frame = pd.DataFrame(data_frame, columns=(['e_lat', 'n_lng', 'dt']))
+    return data_frame
 
 
-def scaling(data: pandas.DataFrame):  # BiB: changed data -> data1, probably unnecessary
-    mn_scaler = MinMaxScaler(feature_range=(-1., 1.))  # BiB: changed range
-    data1 = data.copy()
-    mn_scaler.fit(data1)
-    data1 = mn_scaler.transform(data1)
-    data1 = pd.DataFrame(data1, columns=(['lat', 'lng', 'ind']))
-    return mn_scaler, data1, mn_scaler.get_params,
+def data_preparation(dframe, past_data_size, forecast_size):
+    """sequence data"""
+    shuffle_buffer_size = len(dframe)
+    total_size = past_data_size + forecast_size
+    data = tf.data.Dataset.from_tensor_slices(dframe.values)
+    data = data.window(total_size, shift=1, drop_remainder=True)
+    data = data.flat_map(lambda k: k.batch(total_size))
+    data = data.shuffle(shuffle_buffer_size)
+    data = data.map(lambda k: ((k[:-forecast_size, ],
+                                k[-forecast_size:, ])))
+    return data
+
+
+# def scaling(data: pandas.DataFrame):  # BiB: changed data -> data1, probably unnecessary
+#     mn_scaler = MinMaxScaler(feature_range=(-1., 1.))  # BiB: changed range
+#     mn_scaler.fit(data)
+#     data1 = mn_scaler.transform(data)
+#     data1 = pd.DataFrame(data1, columns=(['lat', 'lng', 'dt']))
+#     return mn_scaler, data1, mn_scaler.get_params
 
 
 def sequence_data(df: pd.DataFrame, window_size, forecast_size, batch_size):
@@ -89,20 +91,29 @@ def sequence_data(df: pd.DataFrame, window_size, forecast_size, batch_size):
 
 n_past = 60
 n_future = 60
-n_features = 2 + 1  # BiB: 3rd feature added
+n_features = 2 + 1
 batch_size = 32
-mn_scaler, scaled_data, parameters = scaling(sub_df)
+# mn_scaler, scaled_data, parameters = scaling(sub_df)
 
-shuffled_data = sequence_data(scaled_data, window_size=n_past, forecast_size=n_future, batch_size=batch_size)
+files = glob.glob("Data/logs/*.log")[:-1]
 
-total_size = len(list(shuffled_data.as_numpy_iterator()))
+mn_scaler = MinMaxScaler(feature_range=(-1., 1.))
+df = [(data_preparation(preprocessing(pd.read_csv(file, delimiter=';', skiprows=0), mn_scaler), n_past, n_future)) for
+      file in files]
+# df = tf.data.Dataset.zip((df[0], df[1]))
+# df = tf.concat(df, 0)
+df = df[0].concatenate(df[1]).concatenate(df[2]).concatenate(df[3]).concatenate(df[4])
+df = df.shuffle(len(list(df.as_numpy_iterator())))
+df = df.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
 
-percentage = 0.80
+total_size = len(list(df.as_numpy_iterator()))
+
+percentage = 0.90
 train_size = int(total_size * percentage)
 # test_size = 1 - train_size #BiB: suppressed size that was using all data for test anyway
 
-train = shuffled_data.take(train_size)
-test = shuffled_data.shuffle(total_size).take(-1)  # BiB: using all data for test, as before
+train = df.take(train_size)
+test = df.shuffle(total_size).take(-1)  # BiB: using all data for test, as before
 
 
 def model1_bi(n_past, n_features):
@@ -153,14 +164,14 @@ optimiser = tf.keras.optimizers.Adam(learning_rate=lr)
 # # # # *************************LearningRate*******************************************************
 
 # BiB: save/reload best weights
-# WEIGHTS_PATH = './best_weights_all.hdf5'
-WEIGHTS_PATH = './best_weights.hdf5'
+WEIGHTS_PATH = 'best_weights_all.hdf5'
+# WEIGHTS_PATH = './best_weights.hdf5'
 NUM_REPEATS = 5  # BiB: multiple restarts may be needed to find good fit
 if exists(WEIGHTS_PATH):
     model = model1_bi(n_past=n_past, n_features=n_features)
     model.load_weights(WEIGHTS_PATH)
 else:
-    checkpointer = tf.keras.callbacks.ModelCheckpoint(filepath='./best_weights_all.hdf5', monitor='loss',
+    checkpointer = tf.keras.callbacks.ModelCheckpoint(filepath='best_weights_all.hdf5', monitor='loss',
                                                       verbose=1,
                                                       save_best_only=True, save_weights_only=False, mode='auto',
                                                       save_freq=train_size)
@@ -176,24 +187,6 @@ else:
     ax1.plot(history_model.history['val_loss'], 'y', label='ValidationLoss')
     ax1.legend()
 
-start_p = 1075  # 1450
-x_test = sub_df[start_p: start_p + n_past]
-# x_scaler, x_scaled_test = scaling(x_test) #BiB: suppressed local scaling
-x_scaled_test = scaled_data[start_p: start_p + n_past]  # BiB: use globally scaled data
-x_scaled_test = np.array(x_scaled_test)
-x_scaled_test = x_scaled_test.reshape((1, -1, n_features))
-
-# print(type(x_test), x_test[:5])
-pred = model.predict(x_scaled_test)
-pred = np.squeeze(pred, axis=0)
-
-df_pred = pd.DataFrame(pred, columns=(['lat', 'lng', 'ind']))  # BiB: added 3rd feature
-
-# df_pred = x_scaler.inverse_transform(df_pred)
-df_pred = mn_scaler.inverse_transform(df_pred)  # BiB: used global scaler
-
-df_pred = pd.DataFrame(df_pred, columns=(['lat', 'lng', 'ind']))
-df_pred.drop('ind', axis=1, inplace=True)  # BiB: dropped extra feature
 # print(type(df_pred), df_pred)
 
 # fig2, ax2 = plt.subplots()
@@ -216,59 +209,45 @@ df_pred.drop('ind', axis=1, inplace=True)  # BiB: dropped extra feature
 # # ********************************Animation *****************************************
 
 # file_not_trained = 'Data/logs/20220429-171330--lm_1p_fd4-IVER3-3072.log'
+
+
 # file_not_trained = 'Data/logs/20220429-151241--lm_1p-IVER3-3072.log'
 file_not_trained = 'Data/logs/20220429-161912--lm_1p_fd2-IVER3-3072.log'
+# file_not_trained = 'Data/logs/20220429-171330--lm_1p_fd4-IVER3-3072.log'
 df_ani = pd.read_csv(file_not_trained, delimiter=';', skiprows=0)
-df_ani = df_ani.rename(columns={"Latitude": 'lat', "Longitude": 'lng'}, errors="raise")
-df_ani = df_ani.loc[(df_ani['lat'] != 0)]
-df_ani.reset_index(drop=True, inplace=True)
-
-df_ani['h'] = 0
-' Convert to local coordinate system'
-df_ani['e_lat'], df_ani['n_lng'], df_ani['u'] = pm.geodetic2enu(df_ani.lat, df_ani.lng, df_ani.h, ori_lat, ori_lng,
-                                                                df_ani.h, ell=None, deg=True)
-
-sub_df_ani = df_ani[['e_lat', 'n_lng']].copy()
-
-start_p = sub_df_ani.index.start
-end_p = sub_df_ani.index.stop
-indices = [*range(end_p - start_p)]  # BiB: added an index feature to data
-sub_df_ani['ind'] = indices
 
 scaler_ani = MinMaxScaler(feature_range=(-1., 1.))
-scaled_sub_df_ani = scaler_ani.fit_transform(sub_df_ani, parameters)
-scaled_sub_df_ani = pd.DataFrame(scaled_sub_df_ani, columns=['lat', 'lng', 'ind'])
-# scaler_ani, scaled_sub_df_ani = scaling(sub_df_ani)
-
-# start_p = sub_df_ani.index.start + 1
+df_ani = preprocessing(df_ani, scaler_ani)
+# print(df_ani.head(5))
 fig, ax = plt.subplots()
 
 
 def init():
-    # ax.set_xlim(-1, 1)
-    # ax.set_xlim(-1, 1)
-    ax.plot(scaled_sub_df_ani.lng, scaled_sub_df_ani.lat, alpha=0.5)
+    ax.plot(df_ani.n_lng, df_ani.e_lat, alpha=0.5)
     ax.set_xlabel('X axis', fontsize=12)
     ax.set_ylabel('Y axis', fontsize=12)
     ax.legend()
     return ax,
 
 
+start_p = 10
+
+
 def animate(i):
     # time.sleep(0.1)
     i = i + start_p
-    scaled = scaled_sub_df_ani[i: i + n_past]
+    scaled = df_ani[i: i + n_past]
     data_ani = np.array(scaled)
     data_ani = data_ani.reshape((1, -1, n_features))
     pred = model.predict(data_ani)
     pred = np.squeeze(pred, axis=0)
-    df_pred = pd.DataFrame(pred, columns=(['lat', 'lng', 'ind']))
+    df_pred = pd.DataFrame(pred, columns=(['lat', 'lng', 'dt']))
     pred = scaler_ani.inverse_transform(df_pred)
-    df_pred.drop('ind', axis=1, inplace=True)
+    df_pred.drop('dt', axis=1, inplace=True)
     print(i)
     plt.cla()
-    ax.plot(scaled_sub_df_ani.lng, scaled_sub_df_ani.lat, alpha=0.5)
-    ax.plot(scaled.lng, scaled.lat, 'y', label='past')
+    ax.plot(df_ani.n_lng, df_ani.e_lat, alpha=0.5)
+    ax.plot(scaled.n_lng, scaled.e_lat, 'y', label='past')
     ax.plot(df_pred.lng, df_pred.lat, 'r', label='predicted')
     return ax
 
