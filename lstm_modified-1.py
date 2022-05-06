@@ -63,26 +63,26 @@ def data_preparation(dframe, past_data_size, forecast_size):
 #     return mn_scaler, data1, mn_scaler.get_params
 
 
-def sequence_data(df: pd.DataFrame, window_size, forecast_size, batch_size):
-    shuffle_buffer_size = len(df)
-    # Total size of window is given by the number of steps to be considered
-    # before prediction time + steps that we want to forecast
-    total_size = window_size + forecast_size
-
-    data = tf.data.Dataset.from_tensor_slices(df.values)
-
-    # Selecting windows
-    data = data.window(total_size, shift=1, drop_remainder=True)
-    data = data.flat_map(lambda k: k.batch(total_size))
-
-    # Shuffling data (seed=Answer to the Ultimate Question of Life, the Universe, and Everything)
-    data = data.shuffle(shuffle_buffer_size)
-
-    # Extracting past features + deterministic future + labels
-    data = data.map(lambda k: ((k[:-forecast_size, ],
-                                k[-forecast_size:, ])))
-
-    return data.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
+# def sequence_data(df: pd.DataFrame, window_size, forecast_size, batch_size):
+#     shuffle_buffer_size = len(df)
+#     # Total size of window is given by the number of steps to be considered
+#     # before prediction time + steps that we want to forecast
+#     total_size = window_size + forecast_size
+#
+#     data = tf.data.Dataset.from_tensor_slices(df.values)
+#
+#     # Selecting windows
+#     data = data.window(total_size, shift=1, drop_remainder=True)
+#     data = data.flat_map(lambda k: k.batch(total_size))
+#
+#     # Shuffling data (seed=Answer to the Ultimate Question of Life, the Universe, and Everything)
+#     data = data.shuffle(shuffle_buffer_size)
+#
+#     # Extracting past features + deterministic future + labels
+#     data = data.map(lambda k: ((k[:-forecast_size, ],
+#                                 k[-forecast_size:, ])))
+#
+#     return data.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
 
 
 n_past = 60
@@ -117,14 +117,13 @@ def model1_bi(n_past, n_features):
     encoder_inputs = tf.keras.layers.Input(shape=(n_past, n_features))
 
     enc_inp = tf.keras.layers.Conv1D(32, 3, activation='relu', padding='causal', input_shape=(n_past, n_features))(
-        encoder_inputs)  # BiB: added conv layer
+        encoder_inputs)
 
     encoder_outputs1 = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(units, activation='relu', return_state=True))(
         enc_inp)
-    x = tf.keras.layers.Dense(2 * units * n_future)(encoder_outputs1[0])  # BiB: instead of repeatvector
+    x = tf.keras.layers.Dense(2 * units * n_future)(encoder_outputs1[0])
     decoder_inputs = tf.keras.layers.Reshape([n_future, 2 * units])(x)
 
-    # decoder_inputs = tf.keras.layers.RepeatVector(n_future)(tf.keras.layers.Dense(256)(encoder_outputs1[0])
 
     decoder_l1 = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(units, activation='relu', return_sequences=True))(
         decoder_inputs, initial_state=encoder_outputs1[1:])
@@ -207,12 +206,13 @@ else:
 # file_not_trained = 'Data/logs/20220429-171330--lm_1p_fd4-IVER3-3072.log'
 
 
-# file_not_trained = 'Data/logs/20220429-151241--lm_1p-IVER3-3072.log'
-file_not_trained = 'Data/logs/20220429-161912--lm_1p_fd2-IVER3-3072.log'
+file_not_trained = 'Data/logs/20220429-151241--lm_1p-IVER3-3072.log'
+# file_not_trained = 'Data/logs/20220429-161912--lm_1p_fd2-IVER3-3072.log'
 # file_not_trained = 'Data/logs/20220429-171330--lm_1p_fd4-IVER3-3072.log'
 df_ani = pd.read_csv(file_not_trained, delimiter=';', skiprows=0)
 
 scaler_ani = MinMaxScaler(feature_range=(-1., 1.))
+parameters = scaler_ani.get_params()
 df_ani = preprocessing(df_ani, scaler_ani)
 # print(df_ani.head(5))
 fig, ax = plt.subplots()
