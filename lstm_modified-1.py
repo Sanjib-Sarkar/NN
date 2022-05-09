@@ -203,9 +203,7 @@ else:
 
 # # ********************************Animation *****************************************
 
-# file_not_trained = 'Data/logs/20220429-171330--lm_1p_fd4-IVER3-3072.log'
-
-
+'testing the model'
 file_not_trained = 'Data/logs/20220429-151241--lm_1p-IVER3-3072.log'
 # file_not_trained = 'Data/logs/20220429-161912--lm_1p_fd2-IVER3-3072.log'
 # file_not_trained = 'Data/logs/20220429-171330--lm_1p_fd4-IVER3-3072.log'
