@@ -22,50 +22,42 @@ colors = [k for k, v in pcolor.cnames.items()]
 class DataAugmentation:
     def __init__(self, dframe):
         self.dframe = dframe
-        # self.nparray = self.dframe[['lat', 'lng']].copy().values
-        self.nparray = None
-        self.ndarray_cmlx = self.dframe.apply(lambda row: complex(row.e_lat, row.n_lng), axis=1).values
+        self.origin = (
+        (self.dframe['e'].max() + self.dframe['e'].min()) / 2, (self.dframe['n'].min() + self.dframe['n'].max()) / 2)
+        self.ndarray_complex = self.dframe.apply(lambda row: complex(row.e, row.n), axis=1).values
 
-    def rotation(self, origin=(0, 0), angle=90):
+    def rotation_mod(self, angle=45):
         angle = np.deg2rad(angle)
-        origin = complex(origin[0], origin[1])  # points[0]
-        rotated = (self.ndarray_cmlx - origin) * np.exp(complex(0, angle)) + origin
-        narray = np.asarray([[element.real, element.imag] for element in rotated])
-        return narray
+        coordinates = self.dframe.values
+        origin = self.origin
+        x1 = origin[0] + (
+                    (coordinates[:, 0] - origin[0]) * np.cos(angle) - (coordinates[:, 1] - origin[1]) * np.sin(angle))
+        y1 = origin[1] + (
+                    (coordinates[:, 0] - origin[0]) * np.sin(angle) + (coordinates[:, 1] - origin[1]) * np.cos(angle))
+        return (x1, y1)
 
-    def scaling(self, nparray, scale=1.0):
-        self.nparray = nparray
-        narray = self.nparray * scale
-        return narray
+    def rotation(self, angle=90):
+        angle = np.deg2rad(angle)
+        # origin = complex(origin[0], origin[1])  # points[0]
+        origin = complex(self.origin[0], self.origin[1])
+        self.ndarray_complex = (self.ndarray_complex - origin) * np.exp(complex(0, angle)) + origin
 
-    def aug_rt_sc(self, origin=(0, 0), angle=90, scale=1.0):
-        return self.scaling(self.rotation(origin, angle=angle), scale=scale)
+    def scaling(self, scale=1.0):
+        self.ndarray_complex = self.ndarray_complex * scale
 
-    def return_df(self, ndarray):
-        df1_from_ndarray = pd.DataFrame(ndarray, columns=['e_lat', 'n_lng'])
-        df1_from_ndarray['dt'] = self.dframe['dt']
-        return df1_from_ndarray
+    def rt_sc(self, angle=90, scale=1.0):
+        self.rotation(angle=angle)
+        self.scaling(scale=scale)
 
-    def concat_df_ndarray(self, dframe, ndarray):
-        # columns = dframe.columns
-        df1_from_ndarray = pd.DataFrame(ndarray, columns=['e_lat', 'n_lng'])
-        df1_from_ndarray['dt'] = self.dframe['dt']
-        return pd.concat([dframe, df1_from_ndarray])
+    def return_df(self):
+        df_from_ndarray = pd.DataFrame([[element.real, element.imag] for element in self.ndarray_complex],
+                                       columns=['e', 'n'])
+        df_from_ndarray['dt'] = self.dframe['dt']
+        return df_from_ndarray
 
-
-def aug_rotation(points, origin=(0, 0), angle=90):
-    """ points: numpy.ndarray; complex number
-      returns : numpy array"""
-    angle = np.deg2rad(angle)
-    origin = complex(origin[0], origin[1])  # points[0]
-    rotated = (points - origin) * np.exp(complex(0, angle)) + origin
-    return np.asarray([[element.real, element.imag] for element in rotated])
-
-
-def aug_scaling(ndary, scale=1.0):
-    """Input: 2D numpy array
-       returns: 2D numpy array """
-    return ndary * scale
+    def concat_dfs(self):
+        df1 = self.return_df()
+        return pd.concat([self.dframe, df1])
 
 
 def preprocessing(data_frame):
