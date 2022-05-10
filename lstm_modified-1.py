@@ -19,7 +19,59 @@ plt.rc('font', **font)
 colors = [k for k, v in pcolor.cnames.items()]
 
 
-def preprocessing(data_frame, scaler):
+class DataAugmentation:
+    def __init__(self, dframe):
+        self.dframe = dframe
+        # self.nparray = self.dframe[['lat', 'lng']].copy().values
+        self.nparray = None
+        self.ndarray_cmlx = self.dframe.apply(lambda row: complex(row.e_lat, row.n_lng), axis=1).values
+
+    def rotation(self, origin=(0, 0), angle=90):
+        angle = np.deg2rad(angle)
+        origin = complex(origin[0], origin[1])  # points[0]
+        rotated = (self.ndarray_cmlx - origin) * np.exp(complex(0, angle)) + origin
+        narray = np.asarray([[element.real, element.imag] for element in rotated])
+        return narray
+
+    def scaling(self, nparray, scale=1.0):
+        self.nparray = nparray
+        narray = self.nparray * scale
+        return narray
+
+    def aug_rt_sc(self, origin=(0, 0), angle=90, scale=1.0):
+        return self.scaling(self.rotation(origin, angle=angle), scale=scale)
+
+    def return_df(self, ndarray):
+        df1_from_ndarray = pd.DataFrame(ndarray, columns=['e_lat', 'n_lng'])
+        df1_from_ndarray['dt'] = self.dframe['dt']
+        return df1_from_ndarray
+
+    def concat_df_ndarray(self, dframe, ndarray):
+        # columns = dframe.columns
+        df1_from_ndarray = pd.DataFrame(ndarray, columns=['e_lat', 'n_lng'])
+        df1_from_ndarray['dt'] = self.dframe['dt']
+        return pd.concat([dframe, df1_from_ndarray])
+
+
+def aug_rotation(points, origin=(0, 0), angle=90):
+    """ points: numpy.ndarray; complex number
+      returns : numpy array"""
+    angle = np.deg2rad(angle)
+    origin = complex(origin[0], origin[1])  # points[0]
+    rotated = (points - origin) * np.exp(complex(0, angle)) + origin
+    return np.asarray([[element.real, element.imag] for element in rotated])
+
+
+def aug_scaling(ndary, scale=1.0):
+    """Input: 2D numpy array
+       returns: 2D numpy array """
+    return ndary * scale
+
+
+def preprocessing(data_frame):
+    """Take the whole dataframe;> makes a subset with lat, lng, date, time; > calculate time-difference; add time-diff
+     column; > change to local coordinate e,n,u>
+       returns: a dataframe with e, n, dt """
     data_frame.rename(columns={"Latitude": 'lat', "Longitude": 'lng'}, errors="raise", inplace=True)
     data_frame = data_frame[['lat', 'lng', 'Time', 'Date']].copy()
     data_frame = data_frame.loc[(data_frame['lat'] != 0)]
@@ -34,8 +86,11 @@ def preprocessing(data_frame, scaler):
                                                                                 data_frame.h, ori_lat, ori_lng,
                                                                                 data_frame.h, ell=None, deg=True)
     data_frame = data_frame[['e_lat', 'n_lng', 'dt']].copy()
+    return data_frame
 
-    'Scaling..... ????'
+
+def scaling(data_frame, scaler):
+    """Scaling..... ????"""
     scaler.fit(data_frame)
     data_frame = scaler.transform(data_frame)
     data_frame = pd.DataFrame(data_frame, columns=(['e_lat', 'n_lng', 'dt']))
@@ -55,36 +110,6 @@ def data_preparation(dframe, past_data_size, forecast_size):
     return data
 
 
-# def scaling(data: pandas.DataFrame):  # BiB: changed data -> data1, probably unnecessary
-#     mn_scaler = MinMaxScaler(feature_range=(-1., 1.))  # BiB: changed range
-#     mn_scaler.fit(data)
-#     data1 = mn_scaler.transform(data)
-#     data1 = pd.DataFrame(data1, columns=(['lat', 'lng', 'dt']))
-#     return mn_scaler, data1, mn_scaler.get_params
-
-
-# def sequence_data(df: pd.DataFrame, window_size, forecast_size, batch_size):
-#     shuffle_buffer_size = len(df)
-#     # Total size of window is given by the number of steps to be considered
-#     # before prediction time + steps that we want to forecast
-#     total_size = window_size + forecast_size
-#
-#     data = tf.data.Dataset.from_tensor_slices(df.values)
-#
-#     # Selecting windows
-#     data = data.window(total_size, shift=1, drop_remainder=True)
-#     data = data.flat_map(lambda k: k.batch(total_size))
-#
-#     # Shuffling data (seed=Answer to the Ultimate Question of Life, the Universe, and Everything)
-#     data = data.shuffle(shuffle_buffer_size)
-#
-#     # Extracting past features + deterministic future + labels
-#     data = data.map(lambda k: ((k[:-forecast_size, ],
-#                                 k[-forecast_size:, ])))
-#
-#     return data.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
-
-
 n_past = 60
 n_future = 60
 n_features = 2 + 1
@@ -94,11 +119,16 @@ batch_size = 32
 files = glob.glob("Data/logs/*.log")[:-1]
 
 mn_scaler = MinMaxScaler(feature_range=(-1., 1.))
-df = [(data_preparation(preprocessing(pd.read_csv(file, delimiter=';', skiprows=0), mn_scaler), n_past, n_future)) for
-      file in files]
-# df = tf.data.Dataset.zip((df[0], df[1]))
-# df = tf.concat(df, 0)
+
+
+dfs = [(data_preparation(preprocessing(pd.read_csv(file, delimiter=';', skiprows=0), mn_scaler), n_past, n_future)) for
+       file in files]
+
+for i in range(1, len(dfs)):
+    df = dfs[0].concatenate(dfs[i])
+
 df = df[0].concatenate(df[1]).concatenate(df[2]).concatenate(df[3]).concatenate(df[4])
+
 df = df.shuffle(len(list(df.as_numpy_iterator())))
 df = df.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
 
@@ -123,7 +153,6 @@ def model1_bi(n_past, n_features):
         enc_inp)
     x = tf.keras.layers.Dense(2 * units * n_future)(encoder_outputs1[0])
     decoder_inputs = tf.keras.layers.Reshape([n_future, 2 * units])(x)
-
 
     decoder_l1 = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(units, activation='relu', return_sequences=True))(
         decoder_inputs, initial_state=encoder_outputs1[1:])
