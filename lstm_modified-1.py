@@ -111,7 +111,7 @@ dfs = [preprocessing(file) for file in read_files]
 aug_dfs = []
 for df in dfs:
     d_aug = DataAugmentation(df)
-    angles = [-25, 25, -35, 35, -45, 45, -60, 60]
+    angles = [-25, 25, -35, 35, -45, 45]
     scales = [1.01, 1.1, 1.2]
     for angle in angles:
         for sc in scales:
@@ -132,7 +132,9 @@ df = data_preparation(scaled_dfs[0], past_data_size=n_past, forecast_size=n_futu
 for i in range(1, len(scaled_dfs)):
     df = df.concatenate(data_preparation(scaled_dfs[i], past_data_size=n_past, forecast_size=n_future))
 
-df = df.shuffle(len(list(df.as_numpy_iterator())))
+# df = df.shuffle(len(list(df.as_numpy_iterator())))
+df = df.shuffle(len(list(df.as_numpy_iterator()))//4)
+
 df = df.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
 
 total_size = len(list(df.as_numpy_iterator()))
@@ -192,14 +194,14 @@ optimiser = tf.keras.optimizers.Adam(learning_rate=lr)
 # # # # *************************LearningRate*******************************************************
 
 # BiB: save/reload best weights
-WEIGHTS_PATH = 'past_weights/best_weights_aug.hdf5'
+WEIGHTS_PATH = './best_weights_aug.hdf5'
 # WEIGHTS_PATH = './best_weights.hdf5'
 NUM_REPEATS = 5  # BiB: multiple restarts may be needed to find good fit
 if exists(WEIGHTS_PATH):
     model = model1_bi(n_past=n_past, n_features=n_features)
     model.load_weights(WEIGHTS_PATH)
 else:
-    checkpointer = tf.keras.callbacks.ModelCheckpoint(filepath='past_weights/best_weights_aug.hdf5', monitor='loss',
+    checkpointer = tf.keras.callbacks.ModelCheckpoint(filepath='./best_weights_aug.hdf5', monitor='loss',
                                                       verbose=1,
                                                       save_best_only=True, save_weights_only=False, mode='auto',
                                                       save_freq=train_size)
