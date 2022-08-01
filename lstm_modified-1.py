@@ -111,15 +111,15 @@ dfs = [preprocessing(file) for file in read_files]
 aug_dfs = []
 for df in dfs:
     d_aug = DataAugmentation(df)
-    angles = [-25, 25, -35, 35, -45, 45]
-    scales = [1.01, 1.1, 1.2]
+    angles = [-35, 35]
+    scales = [1.3]
     for angle in angles:
         for sc in scales:
             d_aug.rt_sc(angle=angle, scale=sc)
             aug_dfs.append(d_aug.return_df())
 
-all_dfs = dfs + aug_dfs
-
+# all_dfs = dfs + aug_dfs
+all_dfs = dfs
 n_past = 60
 n_future = 60
 n_features = 2 + 1
@@ -133,7 +133,7 @@ for i in range(1, len(scaled_dfs)):
     df = df.concatenate(data_preparation(scaled_dfs[i], past_data_size=n_past, forecast_size=n_future))
 
 # df = df.shuffle(len(list(df.as_numpy_iterator())))
-df = df.shuffle(len(list(df.as_numpy_iterator()))//4)
+df = df.shuffle(len(list(df.as_numpy_iterator())) // 4)
 
 df = df.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
 
@@ -164,8 +164,7 @@ def model1_bi(n_past, n_features):
         decoder_inputs, initial_state=encoder_outputs1[1:])
     # decoder_outputs1 = tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(n_features, activation='relu'))(
     # decoder_l1) #BiB: suppressed TD layer
-    decoder_outputs1 = tf.keras.layers.Dense(n_features, activation='linear')(
-        decoder_l1)  # BiB: replaced above with this
+    decoder_outputs1 = tf.keras.layers.Dense(n_features, activation='linear')(decoder_l1)
 
     decoder_outputs1 = decoder_outputs1 + tf.keras.layers.RepeatVector(n_future)(
         tf.reduce_mean(encoder_inputs, axis=1))  # BiB: added to make residual net
@@ -194,8 +193,8 @@ optimiser = tf.keras.optimizers.Adam(learning_rate=lr)
 # # # # *************************LearningRate*******************************************************
 
 # BiB: save/reload best weights
-WEIGHTS_PATH = './best_weights_aug.hdf5'
-# WEIGHTS_PATH = './best_weights.hdf5'
+# WEIGHTS_PATH = './best_weights_aug.hdf5'
+WEIGHTS_PATH = './best_weights.hdf5'
 NUM_REPEATS = 5  # BiB: multiple restarts may be needed to find good fit
 if exists(WEIGHTS_PATH):
     model = model1_bi(n_past=n_past, n_features=n_features)
@@ -206,7 +205,7 @@ else:
                                                       save_best_only=True, save_weights_only=False, mode='auto',
                                                       save_freq=train_size)
     for k in range(NUM_REPEATS):
-        model = model1_bi(n_past=n_past, n_features=n_features)  # BiB: reset model
+        model = model1_bi(n_past=n_past, n_features=n_features)
         model.compile(optimizer=optimiser, loss='mse', metrics=['mae'])
         history_model = model.fit(train, epochs=100, validation_data=test, verbose=1, shuffle=True,
                                   callbacks=[callback_es_train, callback_es_val, checkpointer])
@@ -239,17 +238,74 @@ else:
 # # ********************************Animation *****************************************
 
 'testing the model'
-file_not_trained = 'Data/logs/20220429-151241--lm_1p-IVER3-3072.log'
-# file_not_trained = 'Data/logs/20220429-161912--lm_1p_fd2-IVER3-3072.log'
-# file_not_trained = 'Data/logs/20220429-171330--lm_1p_fd4-IVER3-3072.log'
-df_ani = pd.read_csv(file_not_trained, delimiter=';', skiprows=0)
+# file_test = 'Data/logs/20220429-151241--lm_1p-IVER3-3072.log'
+file_test = 'Data/logs/20220429-161912--lm_1p_fd2-IVER3-3072.log'
+# file_test = 'Data/logs/20220429-171330--lm_1p_fd4-IVER3-3072.log'   # not seen by the model
+
+df_ani = preprocessing(pd.read_csv(file_test, delimiter=';', skiprows=0))
 
 scaler_ani = MinMaxScaler(feature_range=(-1., 1.))
-parameters = scaler_ani.get_params()
-df_ani = preprocessing(df_ani, scaler_ani)
-# print(df_ani.head(5))
+scaler_ani.fit(df_ani)
+scaled = scaler_ani.transform(df_ani)
+scaled = pd.DataFrame(scaled, columns=(['e', 'n', 'dt']))
+
 fig, ax = plt.subplots()
 
+
+# #plot only one window ##############################
+# i = 10
+# scld = scaled[i: i + n_past]
+# data_ani = np.array(scld)
+# data_ani = data_ani.reshape((1, -1, n_features))
+# pred = model.predict(data_ani)
+# pred = np.squeeze(pred, axis=0)
+# df_pred = pd.DataFrame(pred, columns=(['e', 'n', 'dt']))
+# pred = scaler_ani.inverse_transform(df_pred)
+# df_pred.drop('dt', axis=1, inplace=True)
+# ax.plot(scaled.e, scaled.n, alpha=0.6)
+# ax.plot(scld.e, scld.n, 'y', label='past')
+# ax.plot(df_pred.e, df_pred.n, 'r', label='predicted')
+# plt.show()
+######################################################
+#########################################################################
+# def init():
+#     ax.plot(df_ani.n, df_ani.e, alpha=0.5)
+#     ax.set_xlabel('X axis', fontsize=12)
+#     ax.set_ylabel('Y axis', fontsize=12)
+#     ax.legend()
+#     return ax,
+#
+#
+# start_p = 10
+#
+#
+# def animate(i):
+#     # time.sleep(0.1)
+#     i = i + start_p
+#     scld = scaled[i: i + n_past]
+#     data_ani = np.array(scld)
+#     # print(data_ani.shape)
+#     data_ani = data_ani.reshape((1, -1, n_features))
+#     pred = model.predict(data_ani)
+#     pred = np.squeeze(pred, axis=0)
+#     df_pred = pd.DataFrame(pred, columns=(['e', 'n', 'dt']))
+#     pred = scaler_ani.inverse_transform(df_pred)
+#     df_pred.drop('dt', axis=1, inplace=True)
+#     print(i)
+#     plt.cla()
+#     ax.plot(scaled.e, scaled.n, alpha=0.6)
+#     ax.plot(scld.e, scld.n, 'y', label='past')
+#     ax.plot(df_pred.e, df_pred.n, 'r', label='predicted')
+#     return ax
+#
+#
+# # ani = FuncAnimation(plt.gcf(), animate, interval=10)
+# ani = FuncAnimation(plt.gcf(), animate, init_func=init, interval=10)
+# plt.tight_layout()
+# plt.show()
+######################################################################################
+
+### Back to coordinate
 
 def init():
     ax.plot(df_ani.n, df_ani.e, alpha=0.5)
@@ -261,23 +317,22 @@ def init():
 
 start_p = 10
 
-
 def animate(i):
-    # time.sleep(0.1)
     i = i + start_p
-    scaled = df_ani[i: i + n_past]
-    data_ani = np.array(scaled)
+    scld = scaled[i: i + n_past]
+    data_ani = np.array(scld)
+    # print(data_ani.shape)
     data_ani = data_ani.reshape((1, -1, n_features))
     pred = model.predict(data_ani)
     pred = np.squeeze(pred, axis=0)
-    df_pred = pd.DataFrame(pred, columns=(['lat', 'lng', 'dt']))
+    df_pred = pd.DataFrame(pred, columns=(['e', 'n', 'dt']))
     pred = scaler_ani.inverse_transform(df_pred)
     df_pred.drop('dt', axis=1, inplace=True)
     print(i)
     plt.cla()
-    ax.plot(df_ani.n, df_ani.e, alpha=0.5)
-    ax.plot(scaled.n, scaled.e, 'y', label='past')
-    ax.plot(df_pred.lng, df_pred.lat, 'r', label='predicted')
+    ax.plot(scaled.e, scaled.n, alpha=0.6)
+    ax.plot(scld.e, scld.n, 'y', label='past')
+    ax.plot(df_pred.e, df_pred.n, 'r', label='predicted')
     return ax
 
 
